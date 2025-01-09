@@ -1,7 +1,7 @@
 import enum
 
 
-class TrialState(enum.Enum):
+class TrialState(enum.IntEnum):
     """State of a :class:`~optuna.trial.Trial`.
 
     Attributes:
@@ -25,7 +25,6 @@ class TrialState(enum.Enum):
     WAITING = 4
 
     def __repr__(self) -> str:
-
         return str(self)
 
     def is_finished(self) -> bool:

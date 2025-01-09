@@ -5,16 +5,22 @@ Revises: v3.0.0.c
 Create Date: 2022-06-02 09:57:22.818798
 
 """
+
+from __future__ import annotations
+
 import enum
 
 import numpy as np
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import orm
-from typing import Optional
-from typing import Tuple
+
+try:
+    from sqlalchemy.orm import declarative_base
+except ImportError:
+    # TODO(c-bata): Remove this after dropping support for SQLAlchemy v1.3 or prior.
+    from sqlalchemy.ext.declarative import declarative_base
 
 
 # revision identifiers, used by Alembic.
@@ -47,7 +53,7 @@ class TrialValueModel(BaseModel):
     def value_to_stored_repr(
         cls,
         value: float,
-    ) -> Tuple[Optional[float], TrialValueType]:
+    ) -> tuple[float | None, TrialValueType]:
         if value == float("inf"):
             return (None, cls.TrialValueType.INF_POS)
         elif value == float("-inf"):
@@ -56,7 +62,7 @@ class TrialValueModel(BaseModel):
             return (value, cls.TrialValueType.FINITE)
 
     @classmethod
-    def stored_repr_to_value(cls, value: Optional[float], float_type: TrialValueType) -> float:
+    def stored_repr_to_value(cls, value: float | None, float_type: TrialValueType) -> float:
         if float_type == cls.TrialValueType.INF_POS:
             assert value is None
             return float("inf")
@@ -71,6 +77,8 @@ class TrialValueModel(BaseModel):
 
 def upgrade():
     bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    column_names = [c["name"] for c in inspector.get_columns("trial_values")]
 
     sa.Enum(TrialValueModel.TrialValueType).create(bind, checkfirst=True)
 
@@ -78,15 +86,16 @@ def upgrade():
     # ADD COLUMN <col_name> ... DEFAULT "FINITE"', but seemingly Alembic
     # does not support such a SQL statement. So first add a column with schema-level
     # default value setting, then remove it by `batch_op.alter_column()`.
-    with op.batch_alter_table("trial_values") as batch_op:
-        batch_op.add_column(
-            sa.Column(
-                "value_type",
-                sa.Enum("FINITE", "INF_POS", "INF_NEG", name="trialvaluetype"),
-                nullable=False,
-                server_default="FINITE",
-            ),
-        )
+    if "value_type" not in column_names:
+        with op.batch_alter_table("trial_values") as batch_op:
+            batch_op.add_column(
+                sa.Column(
+                    "value_type",
+                    sa.Enum("FINITE", "INF_POS", "INF_NEG", name="trialvaluetype"),
+                    nullable=False,
+                    server_default="FINITE",
+                ),
+            )
     with op.batch_alter_table("trial_values") as batch_op:
         batch_op.alter_column(
             "value_type",
@@ -102,7 +111,16 @@ def upgrade():
 
     session = orm.Session(bind=bind)
     try:
-        records = session.query(TrialValueModel).all()
+        records = (
+            session.query(TrialValueModel)
+            .filter(
+                sa.or_(
+                    TrialValueModel.value > 1e16,
+                    TrialValueModel.value < -1e16,
+                )
+            )
+            .all()
+        )
         mapping = []
         for r in records:
             value: float

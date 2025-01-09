@@ -1,12 +1,9 @@
+from __future__ import annotations
+
+from collections.abc import Callable
 from io import BytesIO
 import math
 from typing import Any
-from typing import Callable
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Tuple
-from typing import Union
 
 import numpy as np
 import pytest
@@ -31,15 +28,12 @@ from optuna.visualization.matplotlib._matplotlib_imports import Axes
 from optuna.visualization.matplotlib._matplotlib_imports import plt
 
 
-RANGE_TYPE = Union[Tuple[str, str], Tuple[float, float]]
-
 parametrize_plot_contour = pytest.mark.parametrize(
     "plot_contour", [plotly_plot_contour, plt_plot_contour]
 )
 
 
 def _create_study_with_failed_trial() -> Study:
-
     study = create_study()
     study.optimize(fail_objective, n_trials=1, catch=(ValueError,))
 
@@ -91,7 +85,7 @@ def _create_study_with_log_scale_and_str_category_3d() -> Study:
 
 def _create_study_mixture_category_types() -> Study:
     study = create_study()
-    distributions: Dict[str, BaseDistribution] = {
+    distributions: dict[str, BaseDistribution] = {
         "param_a": CategoricalDistribution([None, "100"]),
         "param_b": CategoricalDistribution([101, 102.0]),
     }
@@ -108,9 +102,39 @@ def _create_study_mixture_category_types() -> Study:
     return study
 
 
+def _create_study_with_overlapping_params(direction: str) -> Study:
+    study = create_study(direction=direction)
+    distributions = {
+        "param_a": FloatDistribution(1.0, 2.0),
+        "param_b": CategoricalDistribution(["100", "101"]),
+        "param_c": CategoricalDistribution(["foo", "bar"]),
+    }
+    study.add_trial(
+        create_trial(
+            value=0.0,
+            params={"param_a": 1.0, "param_b": "101", "param_c": "foo"},
+            distributions=distributions,
+        )
+    )
+    study.add_trial(
+        create_trial(
+            value=1.0,
+            params={"param_a": 1.0, "param_b": "101", "param_c": "bar"},
+            distributions=distributions,
+        )
+    )
+    study.add_trial(
+        create_trial(
+            value=1.0,
+            params={"param_a": 2.0, "param_b": "100", "param_c": "foo"},
+            distributions=distributions,
+        )
+    )
+    return study
+
+
 @parametrize_plot_contour
 def test_plot_contour_customized_target_name(plot_contour: Callable[..., Any]) -> None:
-
     params = ["param_a", "param_b"]
     study = prepare_study_with_trials()
     figure = plot_contour(study, params=params, target_name="Target Name")
@@ -150,19 +174,18 @@ def test_plot_contour_customized_target_name(plot_contour: Callable[..., Any]) -
 def test_plot_contour(
     plot_contour: Callable[..., Any],
     specific_create_study: Callable[[], Study],
-    params: Optional[List[str]],
+    params: list[str] | None,
 ) -> None:
-
     study = specific_create_study()
     figure = plot_contour(study, params=params)
     if isinstance(figure, go.Figure):
         figure.write_image(BytesIO())
     else:
         plt.savefig(BytesIO())
+        plt.close()
 
 
 def test_target_is_none_and_study_is_multi_obj() -> None:
-
     study = create_study(directions=["minimize", "minimize"])
     with pytest.raises(ValueError):
         _get_contour_info(study)
@@ -184,9 +207,8 @@ def test_target_is_none_and_study_is_multi_obj() -> None:
     ],
 )
 def test_get_contour_info_empty(
-    specific_create_study: Callable[[], Study], params: Optional[List[str]]
+    specific_create_study: Callable[[], Study], params: list[str] | None
 ) -> None:
-
     study = specific_create_study()
     info = _get_contour_info(study, params=params)
     assert len(info.sorted_params) == 0
@@ -201,7 +223,7 @@ def test_get_contour_info_non_exist_param_error() -> None:
 
 
 @pytest.mark.parametrize("params", [[], ["param_a"]])
-def test_get_contour_info_too_short_params(params: List[str]) -> None:
+def test_get_contour_info_too_short_params(params: list[str]) -> None:
     study = prepare_study_with_trials()
     info = _get_contour_info(study, params=params)
     assert len(info.sorted_params) == len(params)
@@ -234,6 +256,7 @@ def test_get_contour_info_2_params() -> None:
                         values=[2.0, 0.0, 1.0],
                     ),
                     z_values={(1, 3): 0.0, (2, 2): 1.0},
+                    constraints=[True, True, True],
                 )
             ]
         ],
@@ -250,13 +273,12 @@ def test_get_contour_info_2_params() -> None:
         None,
     ],
 )
-def test_get_contour_info_more_than_2_params(params: Optional[List[str]]) -> None:
-
+def test_get_contour_info_more_than_2_params(params: list[str] | None) -> None:
     study = prepare_study_with_trials()
     n_params = len(params) if params is not None else 4
     info = _get_contour_info(study, params=params)
     assert len(info.sorted_params) == n_params
-    assert np.shape(np.asarray(info.sub_plot_infos)) == (n_params, n_params, 3)
+    assert np.shape(np.asarray(info.sub_plot_infos, dtype=object)) == (n_params, n_params, 4)
 
 
 @pytest.mark.parametrize(
@@ -266,14 +288,15 @@ def test_get_contour_info_more_than_2_params(params: Optional[List[str]]) -> Non
         ["param_a", "param_b", "param_c"],
     ],
 )
-def test_get_contour_info_customized_target(params: List[str]) -> None:
-
+def test_get_contour_info_customized_target(params: list[str]) -> None:
     study = prepare_study_with_trials()
-    info = _get_contour_info(study, params=params, target=lambda t: t.params["param_d"])
+    info = _get_contour_info(
+        study, params=params, target=lambda t: t.params["param_d"], target_name="param_d"
+    )
     n_params = len(params)
     assert len(info.sorted_params) == n_params
-    plot_shape = (1, 1, 3) if n_params == 2 else (n_params, n_params, 3)
-    assert np.shape(np.asarray(info.sub_plot_infos)) == plot_shape
+    plot_shape = (1, 1, 4) if n_params == 2 else (n_params, n_params, 4)
+    assert np.shape(np.asarray(info.sub_plot_infos, dtype=object)) == plot_shape
 
 
 @pytest.mark.parametrize(
@@ -283,7 +306,7 @@ def test_get_contour_info_customized_target(params: List[str]) -> None:
         ["param_b", "param_a"],  # `y_axis` has one observation.
     ],
 )
-def test_generate_contour_plot_for_few_observations(params: List[str]) -> None:
+def test_generate_contour_plot_for_few_observations(params: list[str]) -> None:
     study = create_study(direction="minimize")
     study.add_trial(
         create_trial(
@@ -326,6 +349,7 @@ def test_generate_contour_plot_for_few_observations(params: List[str]) -> None:
                         values=[2.0, 0.0],
                     ),
                     z_values={},
+                    constraints=[],
                 )
             ]
         ],
@@ -335,7 +359,6 @@ def test_generate_contour_plot_for_few_observations(params: List[str]) -> None:
 
 
 def test_get_contour_info_log_scale_and_str_category_2_params() -> None:
-
     # If the search space has two parameters, plot_contour generates a single plot.
     study = _create_study_with_log_scale_and_str_category_2d()
     info = _get_contour_info(study)
@@ -361,6 +384,7 @@ def test_get_contour_info_log_scale_and_str_category_2_params() -> None:
                         values=["101", "100"],
                     ),
                     z_values={(1, 1): 0.0, (2, 0): 1.0},
+                    constraints=[True, True],
                 )
             ]
         ],
@@ -370,13 +394,12 @@ def test_get_contour_info_log_scale_and_str_category_2_params() -> None:
 
 
 def test_get_contour_info_log_scale_and_str_category_more_than_2_params() -> None:
-
     # If the search space has three parameters, plot_contour generates nine plots.
     study = _create_study_with_log_scale_and_str_category_3d()
     info = _get_contour_info(study)
     params = ["param_a", "param_b", "param_c"]
     assert info.sorted_params == params
-    assert np.shape(np.asarray(info.sub_plot_infos)) == (3, 3, 3)
+    assert np.shape(np.asarray(info.sub_plot_infos, dtype=object)) == (3, 3, 4)
     ranges = {
         "param_a": (math.pow(10, -6.05), math.pow(10, -4.95)),
         "param_b": (-0.05, 1.05),
@@ -384,7 +407,7 @@ def test_get_contour_info_log_scale_and_str_category_more_than_2_params() -> Non
     }
     is_log = {"param_a": True, "param_b": False, "param_c": False}
     is_cat = {"param_a": False, "param_b": True, "param_c": True}
-    indices: Dict[str, List[Union[str, float]]] = {
+    indices: dict[str, list[str | float]] = {
         "param_a": [math.pow(10, -6.05), 1e-6, 1e-5, math.pow(10, -4.95)],
         "param_b": ["100", "101"],
         "param_c": ["one", "two"],
@@ -422,7 +445,6 @@ def test_get_contour_info_log_scale_and_str_category_more_than_2_params() -> Non
 
 
 def test_get_contour_info_mixture_category_types() -> None:
-
     study = _create_study_mixture_category_types()
     info = _get_contour_info(study)
     assert info == _ContourInfo(
@@ -447,6 +469,7 @@ def test_get_contour_info_mixture_category_types() -> None:
                         values=[101.0, 102.0],
                     ),
                     z_values={(0, 2): 0.5, (1, 1): 0.0},
+                    constraints=[True, True],
                 )
             ]
         ],
@@ -457,7 +480,6 @@ def test_get_contour_info_mixture_category_types() -> None:
 
 @pytest.mark.parametrize("value", [float("inf"), -float("inf")])
 def test_get_contour_info_nonfinite_removed(value: float) -> None:
-
     study = prepare_study_with_trials(value_for_first_trial=value)
     info = _get_contour_info(study, params=["param_b", "param_d"])
     assert info == _ContourInfo(
@@ -482,6 +504,7 @@ def test_get_contour_info_nonfinite_removed(value: float) -> None:
                         values=[4.0, 2.0],
                     ),
                     z_values={(1, 2): 2.0, (2, 1): 1.0},
+                    constraints=[True, True],
                 )
             ]
         ],
@@ -493,10 +516,12 @@ def test_get_contour_info_nonfinite_removed(value: float) -> None:
 @pytest.mark.parametrize("objective", (0, 1))
 @pytest.mark.parametrize("value", (float("inf"), -float("inf")))
 def test_get_contour_info_nonfinite_multiobjective(objective: int, value: float) -> None:
-
     study = prepare_study_with_trials(n_objectives=2, value_for_first_trial=value)
     info = _get_contour_info(
-        study, params=["param_b", "param_d"], target=lambda t: t.values[objective]
+        study,
+        params=["param_b", "param_d"],
+        target=lambda t: t.values[objective],
+        target_name="Target Name",
     )
     assert info == _ContourInfo(
         sorted_params=["param_b", "param_d"],
@@ -520,10 +545,46 @@ def test_get_contour_info_nonfinite_multiobjective(objective: int, value: float)
                         values=[4.0, 2.0],
                     ),
                     z_values={(1, 2): 2.0, (2, 1): 1.0},
+                    constraints=[True, True],
                 )
             ]
         ],
         reverse_scale=True,
+        target_name="Target Name",
+    )
+
+
+@pytest.mark.parametrize("direction,expected", (("minimize", 0.0), ("maximize", 1.0)))
+def test_get_contour_info_overlapping_params(direction: str, expected: float) -> None:
+    study = _create_study_with_overlapping_params(direction)
+    info = _get_contour_info(study, params=["param_a", "param_b"])
+    assert info == _ContourInfo(
+        sorted_params=["param_a", "param_b"],
+        sub_plot_infos=[
+            [
+                _SubContourInfo(
+                    xaxis=_AxisInfo(
+                        name="param_a",
+                        range=(0.95, 2.05),
+                        is_log=False,
+                        is_cat=False,
+                        indices=[0.95, 1.0, 2.0, 2.05],
+                        values=[1.0, 1.0, 2.0],
+                    ),
+                    yaxis=_AxisInfo(
+                        name="param_b",
+                        range=(-0.05, 1.05),
+                        is_log=False,
+                        is_cat=True,
+                        indices=["100", "101"],
+                        values=["101", "101", "100"],
+                    ),
+                    z_values={(1, 1): expected, (2, 0): 1.0},
+                    constraints=[True, True, True],
+                )
+            ]
+        ],
+        reverse_scale=False if direction == "maximize" else True,
         target_name="Objective Value",
     )
 
@@ -552,7 +613,7 @@ def test_color_map(direction: str) -> None:
         assert not contour["reversescale"]
 
     # When `target` is not `None`, `reversescale` is always `True`.
-    contour = plotly_plot_contour(study, target=lambda t: t.number).data[0]
+    contour = plotly_plot_contour(study, target=lambda t: t.number, target_name="Number").data[0]
     assert COLOR_SCALE == [v[1] for v in contour["colorscale"]]
     assert contour["reversescale"]
 
@@ -569,6 +630,6 @@ def test_color_map(direction: str) -> None:
                 },
             )
         )
-    contour = plotly_plot_contour(study, target=lambda t: t.number).data[0]
+    contour = plotly_plot_contour(study, target=lambda t: t.number, target_name="Number").data[0]
     assert COLOR_SCALE == [v[1] for v in contour["colorscale"]]
     assert contour["reversescale"]

@@ -1,6 +1,7 @@
-from typing import Callable
-from typing import Generator
-from typing import Optional
+from __future__ import annotations
+
+from collections.abc import Callable
+from collections.abc import Generator
 from unittest import mock
 
 from _pytest.logging import LogCaptureFixture
@@ -35,7 +36,6 @@ def logging_setup() -> Generator[None, None, None]:
 
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_run_trial(storage_mode: str, caplog: LogCaptureFixture) -> None:
-
     with StorageSupplier(storage_mode) as storage:
         study = create_study(storage=storage)
 
@@ -60,7 +60,6 @@ def test_run_trial(storage_mode: str, caplog: LogCaptureFixture) -> None:
 
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_run_trial_automatically_fail(storage_mode: str, caplog: LogCaptureFixture) -> None:
-
     with StorageSupplier(storage_mode) as storage:
         study = create_study(storage=storage)
 
@@ -83,7 +82,7 @@ def test_run_trial_automatically_fail(storage_mode: str, caplog: LogCaptureFixtu
 
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_run_trial_pruned(storage_mode: str, caplog: LogCaptureFixture) -> None:
-    def gen_func(intermediate: Optional[float] = None) -> Callable[[Trial], float]:
+    def gen_func(intermediate: float | None = None) -> Callable[[Trial], float]:
         def func(trial: Trial) -> float:
             if intermediate is not None:
                 trial.report(step=1, value=intermediate)
@@ -151,7 +150,7 @@ def test_run_trial_invoke_tell_with_suppressing_warning(storage_mode: str) -> No
             mock_obj.assert_called_once_with(
                 study=mock.ANY,
                 trial=mock.ANY,
-                values=mock.ANY,
+                value_or_values=mock.ANY,
                 state=mock.ANY,
                 suppress_warning=True,
             )

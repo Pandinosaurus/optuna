@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 from typing import Any
-from typing import Optional
 
 import pytest
 
@@ -49,7 +50,6 @@ def test_deprecation_decorator() -> None:
     assert callable(decorator_deprecation)
 
     def _func() -> int:
-
         return 10
 
     decorated_func = decorator_deprecation(_func)
@@ -94,7 +94,6 @@ def test_deprecation_class_decorator() -> None:
 
 
 def test_deprecation_class_decorator_name() -> None:
-
     name = "foo"
     decorator_deprecation = _deprecated.deprecated_class("1.1.0", "3.0.0", name=name)
     decorated_sample = decorator_deprecation(_Sample)
@@ -108,7 +107,6 @@ def test_deprecation_class_decorator_name() -> None:
 
 def test_deprecation_decorator_name() -> None:
     def _func() -> int:
-
         return 10
 
     name = "bar"
@@ -123,9 +121,8 @@ def test_deprecation_decorator_name() -> None:
 
 
 @pytest.mark.parametrize("text", [None, "", "test", "test" * 100])
-def test_deprecation_text_specified(text: Optional[str]) -> None:
+def test_deprecation_text_specified(text: str | None) -> None:
     def _func() -> int:
-
         return 10
 
     decorator_deprecation = _deprecated.deprecated_func("1.1.0", "3.0.0", text=text)
@@ -152,7 +149,7 @@ def test_deprecation_text_specified(text: Optional[str]) -> None:
 
 
 @pytest.mark.parametrize("text", [None, "", "test", "test" * 100])
-def test_deprecation_class_text_specified(text: Optional[str]) -> None:
+def test_deprecation_class_text_specified(text: str | None) -> None:
     class _Class:
         def __init__(self, a: Any, b: Any, c: Any) -> None:
             pass
@@ -189,7 +186,6 @@ def test_deprecation_decorator_default_removed_version() -> None:
     assert callable(decorator_deprecation)
 
     def _func() -> int:
-
         return 10
 
     decorated_func = decorator_deprecation(_func)

@@ -1,12 +1,8 @@
+from __future__ import annotations
+
 import datetime
 import math
-import tempfile
 from typing import Any
-from typing import cast
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Tuple
 from unittest.mock import Mock
 from unittest.mock import patch
 import warnings
@@ -27,16 +23,18 @@ from optuna.testing.pruners import DeterministicPruner
 from optuna.testing.samplers import DeterministicSampler
 from optuna.testing.storages import STORAGE_MODES
 from optuna.testing.storages import StorageSupplier
+from optuna.testing.tempfile_pool import NamedTemporaryFilePool
 from optuna.trial import Trial
+from optuna.trial._trial import _LazyTrialSystemAttrs
 
 
+@pytest.mark.filterwarnings("ignore::FutureWarning")
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_check_distribution_suggest_float(storage_mode: str) -> None:
-
     sampler = samplers.RandomSampler()
     with StorageSupplier(storage_mode) as storage:
         study = create_study(storage=storage, sampler=sampler)
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
 
         x1 = trial.suggest_float("x1", 10, 20)
         x2 = trial.suggest_uniform("x1", 10, 20)
@@ -58,18 +56,18 @@ def test_check_distribution_suggest_float(storage_mode: str) -> None:
         with pytest.raises(ValueError):
             trial.suggest_int("x1", 10, 20)
 
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
         with pytest.raises(ValueError):
             trial.suggest_int("x1", 10, 20)
 
 
+@pytest.mark.filterwarnings("ignore::FutureWarning")
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_check_distribution_suggest_uniform(storage_mode: str) -> None:
-
     sampler = samplers.RandomSampler()
     with StorageSupplier(storage_mode) as storage:
         study = create_study(storage=storage, sampler=sampler)
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
 
         with pytest.warns() as record:
             trial.suggest_uniform("x", 10, 20)
@@ -77,72 +75,74 @@ def test_check_distribution_suggest_uniform(storage_mode: str) -> None:
             trial.suggest_uniform("x", 10, 30)
 
         # we expect exactly one warning (not counting ones caused by deprecation)
-        assert len([r for r in record if r.category != FutureWarning]) == 1
+        warning_records = [r for r in record if r.category is not FutureWarning]
+        assert len(warning_records) == 1, [warning.message for warning in warning_records]
 
         with pytest.raises(ValueError):
             trial.suggest_int("x", 10, 20)
 
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
         with pytest.raises(ValueError):
             trial.suggest_int("x", 10, 20)
 
 
+@pytest.mark.filterwarnings("ignore::FutureWarning")
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_check_distribution_suggest_loguniform(storage_mode: str) -> None:
-
     sampler = samplers.RandomSampler()
     with StorageSupplier(storage_mode) as storage:
         study = create_study(storage=storage, sampler=sampler)
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
 
         with pytest.warns() as record:
             trial.suggest_loguniform("x", 10, 20)
             trial.suggest_loguniform("x", 10, 20)
             trial.suggest_loguniform("x", 10, 30)
 
-        # we expect exactly one warning (not counting ones caused by deprecation)
-        assert len([r for r in record if r.category != FutureWarning]) == 1
+        # We expect exactly one warning (not counting ones caused by deprecation).
+        warning_records = [r for r in record if r.category is not FutureWarning]
+        assert len(warning_records) == 1, [warning.message for warning in warning_records]
 
         with pytest.raises(ValueError):
             trial.suggest_int("x", 10, 20)
 
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
         with pytest.raises(ValueError):
             trial.suggest_int("x", 10, 20)
 
 
+@pytest.mark.filterwarnings("ignore::FutureWarning")
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_check_distribution_suggest_discrete_uniform(storage_mode: str) -> None:
-
     sampler = samplers.RandomSampler()
     with StorageSupplier(storage_mode) as storage:
         study = create_study(storage=storage, sampler=sampler)
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
 
         with pytest.warns() as record:
             trial.suggest_discrete_uniform("x", 10, 20, 2)
             trial.suggest_discrete_uniform("x", 10, 20, 2)
             trial.suggest_discrete_uniform("x", 10, 22, 2)
 
-        # we expect exactly one warning (not counting ones caused by deprecation)
-        assert len([r for r in record if r.category != FutureWarning]) == 1
+        # We expect exactly one warning (not counting ones caused by deprecation).
+        warning_records = [r for r in record if r.category is not FutureWarning]
+        assert len(warning_records) == 1, [warning.message for warning in warning_records]
 
         with pytest.raises(ValueError):
-            trial.suggest_int("x", 10, 20, 2)
+            trial.suggest_int("x", 10, 20, step=2)
 
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
         with pytest.raises(ValueError):
-            trial.suggest_int("x", 10, 20, 2)
+            trial.suggest_int("x", 10, 20, step=2)
 
 
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 @pytest.mark.parametrize("enable_log", [False, True])
 def test_check_distribution_suggest_int(storage_mode: str, enable_log: bool) -> None:
-
     sampler = samplers.RandomSampler()
     with StorageSupplier(storage_mode) as storage:
         study = create_study(storage=storage, sampler=sampler)
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
 
         with pytest.warns() as record:
             trial.suggest_int("x", 10, 20, log=enable_log)
@@ -150,23 +150,23 @@ def test_check_distribution_suggest_int(storage_mode: str, enable_log: bool) -> 
             trial.suggest_int("x", 10, 22, log=enable_log)
 
         # We expect exactly one warning (not counting ones caused by deprecation).
-        assert len([r for r in record if r.category != FutureWarning]) == 1
+        warning_records = [r for r in record if r.category is not FutureWarning]
+        assert len(warning_records) == 1, [warning.message for warning in warning_records]
 
         with pytest.raises(ValueError):
             trial.suggest_float("x", 10, 20, log=enable_log)
 
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
         with pytest.raises(ValueError):
             trial.suggest_float("x", 10, 20, log=enable_log)
 
 
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_check_distribution_suggest_categorical(storage_mode: str) -> None:
-
     sampler = samplers.RandomSampler()
     with StorageSupplier(storage_mode) as storage:
         study = create_study(storage=storage, sampler=sampler)
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
 
         trial.suggest_categorical("x", [10, 20, 30])
 
@@ -176,19 +176,19 @@ def test_check_distribution_suggest_categorical(storage_mode: str) -> None:
         with pytest.raises(ValueError):
             trial.suggest_int("x", 10, 20)
 
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
         with pytest.raises(ValueError):
             trial.suggest_int("x", 10, 20)
 
 
+@pytest.mark.filterwarnings("ignore::FutureWarning")
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_suggest_uniform(storage_mode: str) -> None:
-
     sampler = DeterministicSampler({"x": 1.0, "y": 2.0})
 
     with StorageSupplier(storage_mode) as storage:
         study = create_study(storage=storage, sampler=sampler)
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
 
         assert trial.suggest_uniform("x", 0.0, 3.0) == 1.0  # Test suggesting a param.
         assert trial.suggest_uniform("x", 0.0, 3.0) == 1.0  # Test suggesting the same param.
@@ -196,9 +196,9 @@ def test_suggest_uniform(storage_mode: str) -> None:
         assert trial.params == {"x": 1.0, "y": 2.0}
 
 
+@pytest.mark.filterwarnings("ignore::FutureWarning")
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_suggest_loguniform(storage_mode: str) -> None:
-
     with pytest.raises(ValueError):
         FloatDistribution(low=1.0, high=0.9, log=True)
 
@@ -209,7 +209,7 @@ def test_suggest_loguniform(storage_mode: str) -> None:
 
     with StorageSupplier(storage_mode) as storage:
         study = create_study(storage=storage, sampler=sampler)
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
 
         assert trial.suggest_loguniform("x", 0.1, 4.0) == 1.0  # Test suggesting a param.
         assert trial.suggest_loguniform("x", 0.1, 4.0) == 1.0  # Test suggesting the same param.
@@ -217,14 +217,14 @@ def test_suggest_loguniform(storage_mode: str) -> None:
         assert trial.params == {"x": 1.0, "y": 2.0}
 
 
+@pytest.mark.filterwarnings("ignore::FutureWarning")
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_suggest_discrete_uniform(storage_mode: str) -> None:
-
     sampler = DeterministicSampler({"x": 1.0, "y": 2.0})
 
     with StorageSupplier(storage_mode) as storage:
         study = create_study(storage=storage, sampler=sampler)
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
 
         assert (
             trial.suggest_discrete_uniform("x", 0.0, 3.0, 1.0) == 1.0
@@ -238,16 +238,15 @@ def test_suggest_discrete_uniform(storage_mode: str) -> None:
         assert trial.params == {"x": 1.0, "y": 2.0}
 
 
+@pytest.mark.filterwarnings("ignore::FutureWarning")
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_suggest_low_equals_high(storage_mode: str) -> None:
-
     with patch.object(
         distributions, "_get_single_value", wraps=distributions._get_single_value
     ) as mock_object, StorageSupplier(storage_mode) as storage:
-
         study = create_study(storage=storage, sampler=samplers.TPESampler(n_startup_trials=0))
 
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
 
         assert trial.suggest_uniform("a", 1.0, 1.0) == 1.0  # Suggesting a param.
         assert mock_object.call_count == 1
@@ -297,6 +296,7 @@ def test_suggest_low_equals_high(storage_mode: str) -> None:
         assert mock_object.call_count == 9
 
 
+@pytest.mark.filterwarnings("ignore::FutureWarning")
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 @pytest.mark.parametrize(
     "range_config",
@@ -308,8 +308,7 @@ def test_suggest_low_equals_high(storage_mode: str) -> None:
         {"low": 0.0, "high": 3.45, "q": 0.1, "mod_high": 3.4},
     ],
 )
-def test_suggest_discrete_uniform_range(storage_mode: str, range_config: Dict[str, float]) -> None:
-
+def test_suggest_discrete_uniform_range(storage_mode: str, range_config: dict[str, float]) -> None:
     sampler = samplers.RandomSampler()
 
     # Check upper endpoints.
@@ -319,7 +318,7 @@ def test_suggest_discrete_uniform_range(storage_mode: str, range_config: Dict[st
         storage_mode
     ) as storage:
         study = create_study(storage=storage, sampler=sampler)
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
 
         with pytest.warns(UserWarning):
             x = trial.suggest_discrete_uniform(
@@ -335,7 +334,7 @@ def test_suggest_discrete_uniform_range(storage_mode: str, range_config: Dict[st
         storage_mode
     ) as storage:
         study = create_study(storage=storage, sampler=sampler)
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
 
         with pytest.warns(UserWarning):
             x = trial.suggest_discrete_uniform(
@@ -346,7 +345,6 @@ def test_suggest_discrete_uniform_range(storage_mode: str, range_config: Dict[st
 
 
 def test_suggest_float_invalid_step() -> None:
-
     study = create_study()
     trial = study.ask()
 
@@ -359,12 +357,11 @@ def test_suggest_float_invalid_step() -> None:
 
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_suggest_int(storage_mode: str) -> None:
-
     sampler = DeterministicSampler({"x": 1, "y": 2})
 
     with StorageSupplier(storage_mode) as storage:
         study = create_study(storage=storage, sampler=sampler)
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
 
         assert trial.suggest_int("x", 0, 3) == 1  # Test suggesting a param.
         assert trial.suggest_int("x", 0, 3) == 1  # Test suggesting the same param.
@@ -381,8 +378,7 @@ def test_suggest_int(storage_mode: str) -> None:
         {"low": 64, "high": 1312, "step": 160, "mod_high": 1184},
     ],
 )
-def test_suggest_int_range(storage_mode: str, range_config: Dict[str, int]) -> None:
-
+def test_suggest_int_range(storage_mode: str, range_config: dict[str, int]) -> None:
     sampler = samplers.RandomSampler()
 
     # Check upper endpoints.
@@ -392,7 +388,7 @@ def test_suggest_int_range(storage_mode: str, range_config: Dict[str, int]) -> N
         storage_mode
     ) as storage:
         study = create_study(storage=storage, sampler=sampler)
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
 
         with pytest.warns(UserWarning):
             x = trial.suggest_int(
@@ -407,9 +403,8 @@ def test_suggest_int_range(storage_mode: str, range_config: Dict[str, int]) -> N
     with patch.object(sampler, "sample_independent", mock) as mock_object, StorageSupplier(
         storage_mode
     ) as storage:
-
         study = create_study(storage=storage, sampler=sampler)
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
 
         with pytest.warns(UserWarning):
             x = trial.suggest_int(
@@ -420,7 +415,6 @@ def test_suggest_int_range(storage_mode: str, range_config: Dict[str, int]) -> N
 
 
 def test_suggest_int_invalid_step() -> None:
-
     study = create_study()
     trial = study.ask()
 
@@ -433,12 +427,11 @@ def test_suggest_int_invalid_step() -> None:
 
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_suggest_int_log(storage_mode: str) -> None:
-
     sampler = DeterministicSampler({"x": 1, "y": 2})
 
     with StorageSupplier(storage_mode) as storage:
         study = create_study(storage=storage, sampler=sampler)
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
 
         assert trial.suggest_int("x", 1, 3, log=True) == 1  # Test suggesting a param.
         assert trial.suggest_int("x", 1, 3, log=True) == 1  # Test suggesting the same param.
@@ -448,11 +441,10 @@ def test_suggest_int_log(storage_mode: str) -> None:
 
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_suggest_int_log_invalid_range(storage_mode: str) -> None:
-
     sampler = samplers.RandomSampler()
     with StorageSupplier(storage_mode) as storage:
         study = create_study(storage=storage, sampler=sampler)
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
         with warnings.catch_warnings():
             # UserWarning will be raised since [0.5, 10] is not divisible by 1.
             warnings.simplefilter("ignore", category=UserWarning)
@@ -461,7 +453,7 @@ def test_suggest_int_log_invalid_range(storage_mode: str) -> None:
 
     with StorageSupplier(storage_mode) as storage:
         study = create_study(storage=storage, sampler=sampler)
-        trial = Trial(study, study._storage.create_new_trial(study._study_id))
+        trial = study.ask()
         with pytest.raises(ValueError):
             trial.suggest_int("w", 1, 3, step=2, log=True)
 
@@ -469,7 +461,6 @@ def test_suggest_int_log_invalid_range(storage_mode: str) -> None:
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_distributions(storage_mode: str) -> None:
     def objective(trial: Trial) -> float:
-
         trial.suggest_float("a", 0, 10)
         trial.suggest_float("b", 0.1, 10, log=True)
         trial.suggest_float("c", 0, 10, step=1)
@@ -494,10 +485,9 @@ def test_distributions(storage_mode: str) -> None:
 
 
 def test_should_prune() -> None:
-
     pruner = DeterministicPruner(True)
     study = create_study(pruner=pruner)
-    trial = Trial(study, study._storage.create_new_trial(study._study_id))
+    trial = study.ask()
     trial.report(1, 1)
     assert trial.should_prune()
 
@@ -507,7 +497,7 @@ def test_relative_parameters(storage_mode: str) -> None:
     class SamplerStubForTestRelativeParameters(samplers.BaseSampler):
         def infer_relative_search_space(
             self, study: "optuna.study.Study", trial: "optuna.trial.FrozenTrial"
-        ) -> Dict[str, distributions.BaseDistribution]:
+        ) -> dict[str, distributions.BaseDistribution]:
             return {
                 "x": FloatDistribution(low=5, high=6),
                 "y": FloatDistribution(low=5, high=6),
@@ -517,8 +507,8 @@ def test_relative_parameters(storage_mode: str) -> None:
             self,
             study: "optuna.study.Study",
             trial: "optuna.trial.FrozenTrial",
-            search_space: Dict[str, distributions.BaseDistribution],
-        ) -> Dict[str, Any]:
+            search_space: dict[str, distributions.BaseDistribution],
+        ) -> dict[str, Any]:
             return {"x": 5.5, "y": 5.5, "z": 5.5}
 
         def sample_independent(
@@ -535,8 +525,7 @@ def test_relative_parameters(storage_mode: str) -> None:
         study = create_study(storage=storage, sampler=sampler)
 
         def create_trial() -> Trial:
-
-            return Trial(study, study._storage.create_new_trial(study._study_id))
+            return study.ask()
 
         # Suggested by `sample_relative`.
         trial0 = create_trial()
@@ -574,11 +563,9 @@ def test_relative_parameters(storage_mode: str) -> None:
 
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_datetime_start(storage_mode: str) -> None:
-
-    trial_datetime_start: List[Optional[datetime.datetime]] = [None]
+    trial_datetime_start: list[datetime.datetime | None] = [None]
 
     def objective(trial: Trial) -> float:
-
         trial_datetime_start[0] = trial.datetime_start
         return 1.0
 
@@ -589,10 +576,9 @@ def test_datetime_start(storage_mode: str) -> None:
         assert study.trials[0].datetime_start == trial_datetime_start[0]
 
 
-def test_report() -> None:
-
+def test_report_value() -> None:
     study = create_study()
-    trial = Trial(study, study._storage.create_new_trial(study._study_id))
+    trial = study.ask()
 
     # Report values that can be cast to `float` (OK).
     trial.report(1.23, 1)
@@ -602,7 +588,7 @@ def test_report() -> None:
     trial.report(1, 5)
     trial.report(np.array([1], dtype=np.float32)[0], 6)
 
-    # Report values that cannot be cast to `float` or steps that are negative (Error).
+    # Report values that cannot be cast to `float`.
     with pytest.raises(TypeError):
         trial.report(None, 7)  # type: ignore
 
@@ -615,12 +601,33 @@ def test_report() -> None:
     with pytest.raises(TypeError):
         trial.report("foo", -1)  # type: ignore
 
+
+def test_report_step() -> None:
+    study = create_study()
+    trial = study.ask()
+    value = 1.0
+
+    # Report values whose steps can be cast to `int` (OK).
+    trial.report(value, 0)
+    trial.report(value, 1.0)  # type: ignore
+    trial.report(value, np.int64(2))  # type: ignore
+
+    # Report values whose steps cannot be cast to `int` (Error).
+    with pytest.raises(TypeError):
+        trial.report(value, None)  # type: ignore
+
+    with pytest.raises(TypeError):
+        trial.report(value, "foo")  # type: ignore
+
+    with pytest.raises(TypeError):
+        trial.report(value, [1, 2, 3])  # type: ignore
+
+    # Report a value whose step is negative (Error).
     with pytest.raises(ValueError):
-        trial.report(1.23, -1)
+        trial.report(value, -1)
 
 
 def test_report_warning() -> None:
-
     study = create_study()
     trial = study.ask()
 
@@ -631,24 +638,16 @@ def test_report_warning() -> None:
         trial.report(1, 1)
 
 
-def test_study_id() -> None:
-
-    study = create_study()
-    trial = Trial(study, study._storage.create_new_trial(study._study_id))
-
-    assert trial._study_id == trial.study._study_id
-
-
 def test_suggest_with_multi_objectives() -> None:
     study = create_study(directions=["maximize", "maximize"])
 
-    def objective(trial: Trial) -> Tuple[float, float]:
+    def objective(trial: Trial) -> tuple[float, float]:
         p0 = trial.suggest_float("p0", -10, 10)
         p1 = trial.suggest_float("p1", 3, 5)
         p2 = trial.suggest_float("p2", 0.00001, 0.1, log=True)
         p3 = trial.suggest_float("p3", 100, 200, step=5)
         p4 = trial.suggest_int("p4", -20, -15)
-        p5 = cast(int, trial.suggest_categorical("p5", [7, 1, 100]))
+        p5 = trial.suggest_categorical("p5", [7, 1, 100])
         p6 = trial.suggest_float("p6", -10, 10, step=1.0)
         p7 = trial.suggest_int("p7", 1, 7, log=True)
         return (
@@ -662,7 +661,7 @@ def test_suggest_with_multi_objectives() -> None:
 def test_raise_error_for_report_with_multi_objectives() -> None:
     study = create_study(directions=["maximize", "maximize"])
 
-    def objective(trial: Trial) -> Tuple[float, float]:
+    def objective(trial: Trial) -> tuple[float, float]:
         with pytest.raises(NotImplementedError):
             trial.report(1.0, 0)
         return 1.0, 1.0
@@ -673,7 +672,7 @@ def test_raise_error_for_report_with_multi_objectives() -> None:
 def test_raise_error_for_should_prune_multi_objectives() -> None:
     study = create_study(directions=["maximize", "maximize"])
 
-    def objective(trial: Trial) -> Tuple[float, float]:
+    def objective(trial: Trial) -> tuple[float, float]:
         with pytest.raises(NotImplementedError):
             trial.should_prune()
         return 1.0, 1.0
@@ -684,7 +683,7 @@ def test_raise_error_for_should_prune_multi_objectives() -> None:
 def test_persisted_param() -> None:
     study_name = "my_study"
 
-    with tempfile.NamedTemporaryFile() as fp:
+    with NamedTemporaryFilePool() as fp:
         storage = f"sqlite:///{fp.name}"
         study = create_study(storage=storage, study_name=study_name)
         assert isinstance(study._storage, storages._CachedStorage), "Pre-condition."
@@ -698,3 +697,47 @@ def test_persisted_param() -> None:
         study = load_study(storage=storage, study_name=study_name)
 
         assert all("x" in t.params for t in study.trials)
+
+
+@pytest.mark.parametrize("storage_mode", STORAGE_MODES)
+def test_lazy_trial_system_attrs(storage_mode: str) -> None:
+    with StorageSupplier(storage_mode) as storage:
+        study = optuna.create_study(storage=storage)
+        trial = study.ask()
+        storage.set_trial_system_attr(trial._trial_id, "int", 0)
+        storage.set_trial_system_attr(trial._trial_id, "str", "A")
+
+        # _LazyTrialSystemAttrs gets attrs the first time it is needed.
+        # Then, we create the instance for each method, and test the first and second use.
+
+        system_attrs = _LazyTrialSystemAttrs(trial._trial_id, storage)
+        assert system_attrs == {"int": 0, "str": "A"}
+        assert system_attrs == {"int": 0, "str": "A"}
+
+        system_attrs = _LazyTrialSystemAttrs(trial._trial_id, storage)
+        assert len(system_attrs) == 2
+        assert len(system_attrs) == 2
+
+        system_attrs = _LazyTrialSystemAttrs(trial._trial_id, storage)
+        assert set(system_attrs.keys()) == {"int", "str"}
+        assert set(system_attrs.keys()) == {"int", "str"}
+
+        system_attrs = _LazyTrialSystemAttrs(trial._trial_id, storage)
+        assert set(system_attrs.values()) == {0, "A"}
+        assert set(system_attrs.values()) == {0, "A"}
+
+        system_attrs = _LazyTrialSystemAttrs(trial._trial_id, storage)
+        assert set(system_attrs.items()) == {("int", 0), ("str", "A")}
+        assert set(system_attrs.items()) == {("int", 0), ("str", "A")}
+
+
+@pytest.mark.filterwarnings("ignore::FutureWarning")
+@pytest.mark.parametrize("positional_args_names", [[], ["step"], ["step", "log"]])
+def test_suggest_int_positional_args(positional_args_names: list[str]) -> None:
+    # If log is specified as positional, step must also be provided as positional.
+    study = optuna.create_study()
+    trial = study.ask()
+    kwargs = dict(step=1, log=False)
+    args = [kwargs[name] for name in positional_args_names]
+    # No error should not be raised even if the coding style is old.
+    trial.suggest_int("x", -1, 1, *args)

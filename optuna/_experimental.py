@@ -1,19 +1,23 @@
+from __future__ import annotations
+
+from collections.abc import Callable
 import functools
 import textwrap
 from typing import Any
-from typing import Callable
-from typing import Optional
+from typing import TYPE_CHECKING
 from typing import TypeVar
 import warnings
-
-from typing_extensions import ParamSpec
 
 from optuna.exceptions import ExperimentalWarning
 
 
-FT = TypeVar("FT")
-FP = ParamSpec("FP")
-CT = TypeVar("CT")
+if TYPE_CHECKING:
+    from typing_extensions import ParamSpec
+
+    FT = TypeVar("FT")
+    FP = ParamSpec("FP")
+    CT = TypeVar("CT")
+
 
 _EXPERIMENTAL_NOTE_TEMPLATE = """
 
@@ -23,8 +27,15 @@ _EXPERIMENTAL_NOTE_TEMPLATE = """
 """
 
 
-def _validate_version(version: str) -> None:
+def warn_experimental_argument(option_name: str) -> None:
+    warnings.warn(
+        f"Argument ``{option_name}`` is an experimental feature."
+        " The interface can change in the future.",
+        ExperimentalWarning,
+    )
 
+
+def _validate_version(version: str) -> None:
     if not isinstance(version, str) or len(version.split(".")) != 3:
         raise ValueError(
             "Invalid version specification. Must follow `x.y.z` format but `{}` is given".format(
@@ -39,7 +50,7 @@ def _get_docstring_indent(docstring: str) -> str:
 
 def experimental_func(
     version: str,
-    name: Optional[str] = None,
+    name: str | None = None,
 ) -> Callable[[Callable[FP, FT]], Callable[FP, FT]]:
     """Decorate function as experimental.
 
@@ -78,7 +89,7 @@ def experimental_func(
 
 def experimental_class(
     version: str,
-    name: Optional[str] = None,
+    name: str | None = None,
 ) -> Callable[[CT], CT]:
     """Decorate class as experimental.
 

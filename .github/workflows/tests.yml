@@ -7,6 +7,7 @@ on:
   pull_request: {}
   schedule:
     - cron: '0 23 * * SUN-THU'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.run_number || github.ref }}
@@ -14,11 +15,21 @@ concurrency:
 
 jobs:
   tests:
+    if: (github.event_name == 'schedule' && github.repository == 'optuna/optuna') || (github.event_name != 'schedule')
     runs-on: ubuntu-latest
 
     strategy:
       matrix:
-        python-version: ['3.6', '3.7', '3.8', '3.9', '3.10']
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
+        test-trigger-type:
+          - ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'Scheduled' || '' }}
+        exclude:
+          - test-trigger-type: ""
+            python-version: "3.9"
+          - test-trigger-type: ""
+            python-version: "3.10"
+          - test-trigger-type: ""
+            python-version: "3.11"
 
     services:
       redis:
@@ -31,47 +42,61 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Setup Python${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
 
     - name: Setup cache
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       env:
         cache-name: test
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-${{ matrix.python-version }}-${{ env.cache-name }}-${{ hashFiles('**/setup.py') }}-v1
+        key: ${{ runner.os }}-${{ matrix.python-version }}-${{ env.cache-name }}-${{ hashFiles('**/pyproject.toml') }}-v1
         restore-keys: |
-          ${{ runner.os }}-${{ matrix.python-version }}-${{ env.cache-name }}-${{ hashFiles('**/setup.py') }}
+          ${{ runner.os }}-${{ matrix.python-version }}-${{ env.cache-name }}-${{ hashFiles('**/pyproject.toml') }}
 
-    - name: Install
+
+    - name: Setup pip
       run: |
         python -m pip install --upgrade pip
         pip install --progress-bar off -U setuptools
 
+    - name: Install
+      run: |
         # Install minimal dependencies and confirm that `import optuna` is successful.
         pip install --progress-bar off .
         python -c 'import optuna'
         optuna --version
 
-        pip install --progress-bar off .[test]
-        pip install --progress-bar off .[optional]
+        pip install --progress-bar off .[test] --extra-index-url https://download.pytorch.org/whl/cpu
+        pip install --progress-bar off .[optional] --extra-index-url https://download.pytorch.org/whl/cpu
 
-        # Required for samplers_tests/test_samplers.py.
-        # TODO(hvy): Fix samplers_tests/test_samplers.py to not require optional dependencies and remove these installs.
-        pip install scikit-optimize
-        pip install cma
-        pip install shap
+        # TODO(gen740): Remove this after pytorch supports Python 3.13
+        if [ "${{ matrix.python-version }}" = "3.13" ] ; then
+          pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cpu
+        fi
 
-    # TODO(nzw): Move `run` part to the end of `Install` after Optuna drops Python 3.6 support.
-    - name: Install PyTorch and BoTorch.
-      run: pip install botorch torch==1.11.0 --extra-index-url https://download.pytorch.org/whl/cpu
-      if: matrix.python-version != '3.6'
+    - name: Output installed packages
+      run: |
+        pip freeze --all
+    - name: Output dependency tree
+      run: |
+        pip install pipdeptree
+        pipdeptree
 
     - name: Tests
       run: |
-        pytest tests --ignore tests/integration_tests
+        if [ "${{ github.event_name }}" = "schedule" ] || \
+           [ "${{ github.event_name }}" = "workflow_dispatch" ] ; then
+          target=""
+        else
+          target="not slow"
+        fi
+
+        pytest tests -m "$target"
+      env:
+        SQLALCHEMY_WARN_20: 1

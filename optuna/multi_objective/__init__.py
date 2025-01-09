@@ -1,9 +1,10 @@
-from optuna._imports import _LazyImport
-from optuna.multi_objective import samplers  # NOQA
-from optuna.multi_objective import study  # NOQA
-from optuna.multi_objective import trial  # NOQA
-from optuna.multi_objective.study import create_study  # NOQA
-from optuna.multi_objective.study import load_study  # NOQA
-
-
-visualization = _LazyImport("optuna.multi_objective.visualization")
+# TODO(nabenabe0928): Come up with any ways to remove this file.
+# NOTE(nabenabe0928): Discuss when to remove this class.
+migration_url = "https://github.com/optuna/optuna/discussions/5573"
+raise ModuleNotFoundError(
+    "\nThe features in `optuna.multi_objective` were integrated with the"
+    "\nsingle objective optimization API and `optuna.multi_objective` were"
+    "\ndeleted at v4.0.0. Please update your code based on the migration guide"
+    f"\nat {migration_url}"
+    "\nor downgrade your Optuna version."
+)

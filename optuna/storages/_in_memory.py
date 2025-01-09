@@ -1,19 +1,16 @@
+from __future__ import annotations
+
+from collections.abc import Container
+from collections.abc import Sequence
 import copy
 from datetime import datetime
 import threading
 from typing import Any
-from typing import Container
-from typing import Dict
-from typing import Iterator
-from typing import List
-from typing import Optional
-from typing import Sequence
-from typing import Tuple
-from typing import Union
 import uuid
 
 import optuna
 from optuna import distributions  # NOQA
+from optuna._typing import JSONSerializable
 from optuna.exceptions import DuplicatedStudyError
 from optuna.storages import BaseStorage
 from optuna.storages._base import DEFAULT_STUDY_NAME_PREFIX
@@ -29,30 +26,48 @@ _logger = optuna.logging.get_logger(__name__)
 class InMemoryStorage(BaseStorage):
     """Storage class that stores data in memory of the Python process.
 
-    This class is not supposed to be directly accessed by library users.
+    Example:
+
+        Create an :class:`~optuna.storages.InMemoryStorage` instance.
+
+        .. testcode::
+
+            import optuna
+
+
+            def objective(trial):
+                x = trial.suggest_float("x", -100, 100)
+                return x**2
+
+
+            storage = optuna.storages.InMemoryStorage()
+
+            study = optuna.create_study(storage=storage)
+            study.optimize(objective, n_trials=10)
     """
 
     def __init__(self) -> None:
-        self._trial_id_to_study_id_and_number: Dict[int, Tuple[int, int]] = {}
-        self._study_name_to_id: Dict[str, int] = {}
-        self._studies: Dict[int, _StudyInfo] = {}
+        self._trial_id_to_study_id_and_number: dict[int, tuple[int, int]] = {}
+        self._study_name_to_id: dict[str, int] = {}
+        self._studies: dict[int, _StudyInfo] = {}
 
         self._max_study_id = -1
         self._max_trial_id = -1
 
         self._lock = threading.RLock()
 
-    def __getstate__(self) -> Dict[Any, Any]:
+    def __getstate__(self) -> dict[Any, Any]:
         state = self.__dict__.copy()
         del state["_lock"]
         return state
 
-    def __setstate__(self, state: Dict[Any, Any]) -> None:
+    def __setstate__(self, state: dict[Any, Any]) -> None:
         self.__dict__.update(state)
         self._lock = threading.RLock()
 
-    def create_new_study(self, study_name: Optional[str] = None) -> int:
-
+    def create_new_study(
+        self, directions: Sequence[StudyDirection], study_name: str | None = None
+    ) -> int:
         with self._lock:
             study_id = self._max_study_id + 1
             self._max_study_id += 1
@@ -63,7 +78,8 @@ class InMemoryStorage(BaseStorage):
             else:
                 study_uuid = str(uuid.uuid4())
                 study_name = DEFAULT_STUDY_NAME_PREFIX + study_uuid
-            self._studies[study_id] = _StudyInfo(study_name)
+
+            self._studies[study_id] = _StudyInfo(study_name, list(directions))
             self._study_name_to_id[study_name] = study_id
 
             _logger.info("A new study created in memory with name: {}".format(study_name))
@@ -71,7 +87,6 @@ class InMemoryStorage(BaseStorage):
             return study_id
 
     def delete_study(self, study_id: int) -> None:
-
         with self._lock:
             self._check_study_id(study_id)
 
@@ -81,38 +96,19 @@ class InMemoryStorage(BaseStorage):
             del self._study_name_to_id[study_name]
             del self._studies[study_id]
 
-    def set_study_directions(self, study_id: int, directions: Sequence[StudyDirection]) -> None:
-
-        with self._lock:
-            self._check_study_id(study_id)
-
-            study = self._studies[study_id]
-            if study.directions[0] != StudyDirection.NOT_SET and study.directions != list(
-                directions
-            ):
-                raise ValueError(
-                    "Cannot overwrite study direction from {} to {}.".format(
-                        study.directions, directions
-                    )
-                )
-            study.directions = list(directions)
-
     def set_study_user_attr(self, study_id: int, key: str, value: Any) -> None:
-
         with self._lock:
             self._check_study_id(study_id)
 
             self._studies[study_id].user_attrs[key] = value
 
-    def set_study_system_attr(self, study_id: int, key: str, value: Any) -> None:
-
+    def set_study_system_attr(self, study_id: int, key: str, value: JSONSerializable) -> None:
         with self._lock:
             self._check_study_id(study_id)
 
             self._studies[study_id].system_attrs[key] = value
 
     def get_study_id_from_name(self, study_name: str) -> int:
-
         with self._lock:
             if study_name not in self._study_name_to_id:
                 raise KeyError("No such study {}.".format(study_name))
@@ -120,30 +116,26 @@ class InMemoryStorage(BaseStorage):
             return self._study_name_to_id[study_name]
 
     def get_study_name_from_id(self, study_id: int) -> str:
-
         with self._lock:
             self._check_study_id(study_id)
             return self._studies[study_id].name
 
-    def get_study_directions(self, study_id: int) -> List[StudyDirection]:
-
+    def get_study_directions(self, study_id: int) -> list[StudyDirection]:
         with self._lock:
             self._check_study_id(study_id)
             return self._studies[study_id].directions
 
-    def get_study_user_attrs(self, study_id: int) -> Dict[str, Any]:
-
+    def get_study_user_attrs(self, study_id: int) -> dict[str, Any]:
         with self._lock:
             self._check_study_id(study_id)
             return self._studies[study_id].user_attrs
 
-    def get_study_system_attrs(self, study_id: int) -> Dict[str, Any]:
-
+    def get_study_system_attrs(self, study_id: int) -> dict[str, Any]:
         with self._lock:
             self._check_study_id(study_id)
             return self._studies[study_id].system_attrs
 
-    def get_all_studies(self) -> List[FrozenStudy]:
+    def get_all_studies(self) -> list[FrozenStudy]:
         with self._lock:
             return [self._build_frozen_study(study_id) for study_id in self._studies]
 
@@ -158,8 +150,7 @@ class InMemoryStorage(BaseStorage):
             study_id=study_id,
         )
 
-    def create_new_trial(self, study_id: int, template_trial: Optional[FrozenTrial] = None) -> int:
-
+    def create_new_trial(self, study_id: int, template_trial: FrozenTrial | None = None) -> int:
         with self._lock:
             self._check_study_id(study_id)
 
@@ -179,7 +170,6 @@ class InMemoryStorage(BaseStorage):
 
     @staticmethod
     def _create_running_trial() -> FrozenTrial:
-
         return FrozenTrial(
             trial_id=-1,  # dummy value.
             number=-1,  # dummy value.
@@ -201,7 +191,6 @@ class InMemoryStorage(BaseStorage):
         param_value_internal: float,
         distribution: distributions.BaseDistribution,
     ) -> None:
-
         with self._lock:
             trial = self._get_trial(trial_id)
 
@@ -226,7 +215,6 @@ class InMemoryStorage(BaseStorage):
             self._set_trial(trial_id, trial)
 
     def get_trial_id_from_study_id_trial_number(self, study_id: int, trial_number: int) -> int:
-
         with self._lock:
             study = self._studies.get(study_id)
             if study is None:
@@ -246,18 +234,17 @@ class InMemoryStorage(BaseStorage):
             return trial._trial_id
 
     def get_trial_number_from_id(self, trial_id: int) -> int:
-
         with self._lock:
             self._check_trial_id(trial_id)
 
             return self._trial_id_to_study_id_and_number[trial_id][1]
 
     def get_best_trial(self, study_id: int) -> FrozenTrial:
-
         with self._lock:
             self._check_study_id(study_id)
 
             best_trial_id = self._studies[study_id].best_trial_id
+
             if best_trial_id is None:
                 raise ValueError("No trials are completed yet.")
             elif len(self._studies[study_id].directions) > 1:
@@ -267,7 +254,6 @@ class InMemoryStorage(BaseStorage):
             return self.get_trial(best_trial_id)
 
     def get_trial_param(self, trial_id: int, param_name: str) -> float:
-
         with self._lock:
             trial = self._get_trial(trial_id)
 
@@ -275,9 +261,8 @@ class InMemoryStorage(BaseStorage):
             return distribution.to_internal_repr(trial.params[param_name])
 
     def set_trial_state_values(
-        self, trial_id: int, state: TrialState, values: Optional[Sequence[float]] = None
+        self, trial_id: int, state: TrialState, values: Sequence[float] | None = None
     ) -> bool:
-
         with self._lock:
             trial = copy.copy(self._get_trial(trial_id))
             self.check_trial_is_updatable(trial_id, trial.state)
@@ -303,7 +288,6 @@ class InMemoryStorage(BaseStorage):
             return True
 
     def _update_cache(self, trial_id: int, study_id: int) -> None:
-
         trial = self._get_trial(trial_id)
 
         if trial.state != TrialState.COMPLETE:
@@ -339,7 +323,6 @@ class InMemoryStorage(BaseStorage):
     def set_trial_intermediate_value(
         self, trial_id: int, step: int, intermediate_value: float
     ) -> None:
-
         with self._lock:
             trial = self._get_trial(trial_id)
             self.check_trial_is_updatable(trial_id, trial.state)
@@ -350,7 +333,6 @@ class InMemoryStorage(BaseStorage):
             self._set_trial(trial_id, trial)
 
     def set_trial_user_attr(self, trial_id: int, key: str, value: Any) -> None:
-
         with self._lock:
             self._check_trial_id(trial_id)
             trial = self._get_trial(trial_id)
@@ -361,8 +343,7 @@ class InMemoryStorage(BaseStorage):
             trial.user_attrs[key] = value
             self._set_trial(trial_id, trial)
 
-    def set_trial_system_attr(self, trial_id: int, key: str, value: Any) -> None:
-
+    def set_trial_system_attr(self, trial_id: int, key: str, value: JSONSerializable) -> None:
         with self._lock:
             trial = self._get_trial(trial_id)
             self.check_trial_is_updatable(trial_id, trial.state)
@@ -373,12 +354,10 @@ class InMemoryStorage(BaseStorage):
             self._set_trial(trial_id, trial)
 
     def get_trial(self, trial_id: int) -> FrozenTrial:
-
         with self._lock:
             return self._get_trial(trial_id)
 
     def _get_trial(self, trial_id: int) -> FrozenTrial:
-
         self._check_trial_id(trial_id)
         study_id, trial_number = self._trial_id_to_study_id_and_number[trial_id]
         return self._studies[study_id].trials[trial_number]
@@ -391,43 +370,38 @@ class InMemoryStorage(BaseStorage):
         self,
         study_id: int,
         deepcopy: bool = True,
-        states: Optional[Container[TrialState]] = None,
-    ) -> List[FrozenTrial]:
-
+        states: Container[TrialState] | None = None,
+    ) -> list[FrozenTrial]:
         with self._lock:
             self._check_study_id(study_id)
 
-            trials = self._studies[
-                study_id
-            ].trials  # type: Union[List[FrozenTrial], Iterator[FrozenTrial]]
-
+            trials = self._studies[study_id].trials
             if states is not None:
-                trials = filter(lambda t: t.state in states, trials)
+                trials = [t for t in trials if t.state in states]
 
             if deepcopy:
-                trials = copy.deepcopy(list(trials))
+                trials = copy.deepcopy(trials)
             else:
-                trials = list(trials)
+                # This copy is required for the replacing trick in `set_trial_xxx`.
+                trials = copy.copy(trials)
 
         return trials
 
     def _check_study_id(self, study_id: int) -> None:
-
         if study_id not in self._studies:
             raise KeyError("No study with study_id {} exists.".format(study_id))
 
     def _check_trial_id(self, trial_id: int) -> None:
-
         if trial_id not in self._trial_id_to_study_id_and_number:
             raise KeyError("No trial with trial_id {} exists.".format(trial_id))
 
 
 class _StudyInfo:
-    def __init__(self, name: str) -> None:
-        self.trials: List[FrozenTrial] = []
-        self.param_distribution: Dict[str, distributions.BaseDistribution] = {}
-        self.user_attrs: Dict[str, Any] = {}
-        self.system_attrs: Dict[str, Any] = {}
+    def __init__(self, name: str, directions: list[StudyDirection]) -> None:
+        self.trials: list[FrozenTrial] = []
+        self.param_distribution: dict[str, distributions.BaseDistribution] = {}
+        self.user_attrs: dict[str, Any] = {}
+        self.system_attrs: dict[str, Any] = {}
         self.name: str = name
-        self.directions: List[StudyDirection] = [StudyDirection.NOT_SET]
-        self.best_trial_id: Optional[int] = None
+        self.directions: list[StudyDirection] = directions
+        self.best_trial_id: int | None = None

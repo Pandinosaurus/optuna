@@ -1,9 +1,9 @@
+from __future__ import annotations
+
 import copy
 import json
 from typing import Any
 from typing import cast
-from typing import Dict
-from typing import Optional
 import warnings
 
 import numpy as np
@@ -15,7 +15,7 @@ from optuna import distributions
 _choices = (None, True, False, 0, 1, 0.0, 1.0, float("nan"), float("inf"), -float("inf"), "", "a")
 _choices_json = '[null, true, false, 0, 1, 0.0, 1.0, NaN, Infinity, -Infinity, "", "a"]'
 
-EXAMPLE_DISTRIBUTIONS: Dict[str, Any] = {
+EXAMPLE_DISTRIBUTIONS: dict[str, Any] = {
     "i": distributions.IntDistribution(low=1, high=9, log=False),
     # i2 and i3 are identical to i, and tested for cases when `log` and `step` are omitted in json.
     "i2": distributions.IntDistribution(low=1, high=9, log=False),
@@ -72,7 +72,6 @@ EXAMPLE_ABBREVIATED_JSONS = {
 
 
 def test_json_to_distribution() -> None:
-
     for key in EXAMPLE_JSONS:
         distribution_actual = distributions.json_to_distribution(EXAMPLE_JSONS[key])
         assert distribution_actual == EXAMPLE_DISTRIBUTIONS[key]
@@ -82,7 +81,6 @@ def test_json_to_distribution() -> None:
 
 
 def test_abbreviated_json_to_distribution() -> None:
-
     for key in EXAMPLE_ABBREVIATED_JSONS:
         distribution_actual = distributions.json_to_distribution(EXAMPLE_ABBREVIATED_JSONS[key])
         assert distribution_actual == EXAMPLE_DISTRIBUTIONS[key]
@@ -108,7 +106,6 @@ def test_abbreviated_json_to_distribution() -> None:
 
 
 def test_distribution_to_json() -> None:
-
     for key in EXAMPLE_JSONS:
         json_actual = json.loads(distributions.distribution_to_json(EXAMPLE_DISTRIBUTIONS[key]))
         json_expect = json.loads(EXAMPLE_JSONS[key])
@@ -120,7 +117,6 @@ def test_distribution_to_json() -> None:
 
 
 def test_check_distribution_compatibility() -> None:
-
     # Test the same distribution.
     for key in EXAMPLE_JSONS:
         distributions.check_distribution_compatibility(
@@ -200,17 +196,69 @@ def test_check_distribution_compatibility() -> None:
     )
 
 
-@pytest.mark.parametrize("value", (0, 1, 4, 10, 11))
-def test_int_internal_representation(value: int) -> None:
-
+@pytest.mark.parametrize("value", (0, 1, 4, 10, 11, 1.1, "1", "1.1", "-1.0", True, False))
+def test_int_internal_representation(value: Any) -> None:
     i = distributions.IntDistribution(low=1, high=10)
-    assert i.to_external_repr(i.to_internal_repr(value)) == value
+
+    if isinstance(value, int):
+        expected_value = value
+    else:
+        expected_value = int(float(value))
+    assert i.to_external_repr(i.to_internal_repr(value)) == expected_value
 
 
-@pytest.mark.parametrize("value", (1.99, 2.0, 4.5, 7, 7.1))
-def test_float_internal_representation(value: float) -> None:
+@pytest.mark.parametrize(
+    "value, kwargs",
+    [
+        ("foo", {}),
+        ((), {}),
+        ([], {}),
+        ({}, {}),
+        (set(), {}),
+        (np.ones(2), {}),
+        (np.nan, {}),
+        (0, dict(log=True)),
+        (-1, dict(log=True)),
+    ],
+)
+def test_int_internal_representation_error(value: Any, kwargs: dict[str, Any]) -> None:
+    i = distributions.IntDistribution(low=1, high=10, **kwargs)
+    with pytest.raises(ValueError):
+        i.to_internal_repr(value)
+
+
+@pytest.mark.parametrize(
+    "value",
+    (1.99, 2.0, 4.5, 7, 7.1, 1, "1", "1.1", "-1.0", True, False),
+)
+def test_float_internal_representation(value: Any) -> None:
     f = distributions.FloatDistribution(low=2.0, high=7.0)
-    assert f.to_external_repr(f.to_internal_repr(value)) == value
+
+    if isinstance(value, float):
+        expected_value = value
+    else:
+        expected_value = float(value)
+    assert f.to_external_repr(f.to_internal_repr(value)) == expected_value
+
+
+@pytest.mark.parametrize(
+    "value, kwargs",
+    [
+        ("foo", {}),
+        ((), {}),
+        ([], {}),
+        ({}, {}),
+        (set(), {}),
+        (np.ones(2), {}),
+        (np.nan, {}),
+        (0.0, dict(log=True)),
+        (-1.0, dict(log=True)),
+    ],
+)
+def test_float_internal_representation_error(value: Any, kwargs: dict[str, Any]) -> None:
+    f = distributions.FloatDistribution(low=2.0, high=7.0, **kwargs)
+    with pytest.raises(ValueError):
+        f.to_internal_repr(value)
 
 
 def test_categorical_internal_representation() -> None:
@@ -270,7 +318,7 @@ def test_int_contains(expected: bool, value: float, step: int) -> None:
         (False, 6.1, 2.0),
     ],
 )
-def test_float_contains(expected: bool, value: float, step: Optional[float]) -> None:
+def test_float_contains(expected: bool, value: float, step: float | None) -> None:
     with warnings.catch_warnings():
         # When `step` is 2.0, UserWarning will be raised since the range is not divisible by 2.
         # The range will be replaced with [2.0, 6.0].
@@ -280,7 +328,6 @@ def test_float_contains(expected: bool, value: float, step: Optional[float]) -> 
 
 
 def test_categorical_contains() -> None:
-
     c = distributions.CategoricalDistribution(choices=("Roppongi", "Azabu"))
     assert not c._contains(-1)
     assert c._contains(0)
@@ -290,7 +337,6 @@ def test_categorical_contains() -> None:
 
 
 def test_empty_range_contains() -> None:
-
     i = distributions.IntDistribution(low=1, high=1)
     assert not i._contains(0)
     assert i._contains(1)
@@ -355,7 +401,7 @@ def test_int_single(expected: bool, low: int, high: int, log: bool, step: int) -
     ],
 )
 def test_float_single(
-    expected: bool, low: float, high: float, log: bool, step: Optional[float]
+    expected: bool, low: float, high: float, log: bool, step: float | None
 ) -> None:
     with warnings.catch_warnings():
         # When `step` is 0.3, UserWarning will be raised since the range is not divisible by 0.3.
@@ -371,13 +417,11 @@ def test_categorical_single() -> None:
 
 
 def test_invalid_distribution() -> None:
-
     with pytest.warns(UserWarning):
         distributions.CategoricalDistribution(choices=({"foo": "bar"},))  # type: ignore
 
 
 def test_eq_ne_hash() -> None:
-
     # Two instances of a class are regarded as equivalent if the fields have the same values.
     for d in EXAMPLE_DISTRIBUTIONS.values():
         d_copy = copy.deepcopy(d)
@@ -395,7 +439,6 @@ def test_eq_ne_hash() -> None:
 
 
 def test_repr() -> None:
-
     # The following variables are needed to apply `eval` to distribution
     # instances that contain `float('nan')` or `float('inf')` as a field value.
     nan = float("nan")  # NOQA
@@ -427,14 +470,13 @@ def test_int_distribution_asdict(key: str, low: int, high: int, log: bool, step:
     ],
 )
 def test_float_distribution_asdict(
-    key: str, low: float, high: float, log: bool, step: Optional[float]
+    key: str, low: float, high: float, log: bool, step: float | None
 ) -> None:
     expected_dict = {"low": low, "high": high, "log": log, "step": step}
     assert EXAMPLE_DISTRIBUTIONS[key]._asdict() == expected_dict
 
 
 def test_int_init_error() -> None:
-
     # Empty distributions cannot be instantiated.
     with pytest.raises(ValueError):
         distributions.IntDistribution(low=123, high=100)
@@ -458,7 +500,6 @@ def test_int_init_error() -> None:
 
 
 def test_float_init_error() -> None:
-
     # Empty distributions cannot be instantiated.
     with pytest.raises(ValueError):
         distributions.FloatDistribution(low=0.0, high=-100.0)
@@ -487,7 +528,6 @@ def test_categorical_init_error() -> None:
 
 
 def test_categorical_distribution_different_sequence_types() -> None:
-
     c1 = distributions.CategoricalDistribution(choices=("Roppongi", "Azabu"))
     c2 = distributions.CategoricalDistribution(choices=["Roppongi", "Azabu"])
 
@@ -550,3 +590,20 @@ def test_convert_old_distribution_to_new_distribution_noop() -> None:
 
     ild = distributions.IntDistribution(low=1, high=10, log=True)
     assert distributions._convert_old_distribution_to_new_distribution(ild) == ild
+
+
+def test_is_distribution_log() -> None:
+    lfd = distributions.FloatDistribution(low=1, high=10, log=True)
+    assert distributions._is_distribution_log(lfd)
+
+    lid = distributions.IntDistribution(low=1, high=10, log=True)
+    assert distributions._is_distribution_log(lid)
+
+    fd = distributions.FloatDistribution(low=0, high=10, log=False)
+    assert not distributions._is_distribution_log(fd)
+
+    id = distributions.IntDistribution(low=0, high=10, log=False)
+    assert not distributions._is_distribution_log(id)
+
+    cd = distributions.CategoricalDistribution(choices=["a", "b", "c"])
+    assert not distributions._is_distribution_log(cd)

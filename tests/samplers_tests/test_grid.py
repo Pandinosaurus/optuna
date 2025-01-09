@@ -1,12 +1,9 @@
-from collections import OrderedDict
+from __future__ import annotations
+
+from collections.abc import Mapping
+from collections.abc import Sequence
+from collections.abc import ValuesView
 import itertools
-from typing import cast
-from typing import Dict
-from typing import List
-from typing import Mapping
-from typing import Sequence
-from typing import Union
-from typing import ValuesView
 
 import numpy as np
 import pytest
@@ -15,13 +12,14 @@ import optuna
 from optuna import samplers
 from optuna.samplers._grid import GridValueType
 from optuna.storages import RetryFailedTrialCallback
+from optuna.testing.objectives import fail_objective
 from optuna.testing.objectives import pruned_objective
+from optuna.testing.storages import StorageSupplier
 from optuna.trial import Trial
 
 
 def test_study_optimize_with_single_search_space() -> None:
     def objective(trial: Trial) -> float:
-
         a = trial.suggest_int("a", 0, 100)
         b = trial.suggest_float("b", -0.1, 0.1)
         c = trial.suggest_categorical("c", ("x", "y", None, 1, 2.0))
@@ -47,8 +45,7 @@ def test_study_optimize_with_single_search_space() -> None:
     def sorted_values(
         d: Mapping[str, Sequence[GridValueType]]
     ) -> ValuesView[Sequence[GridValueType]]:
-
-        return OrderedDict(sorted(d.items())).values()
+        return dict(sorted(d.items())).values()
 
     all_grids = itertools.product(*sorted_values(search_space))  # type: ignore
     all_suggested_values = [tuple([p for p in sorted_values(t.params)]) for t in study.trials]
@@ -75,11 +72,10 @@ def test_study_optimize_with_single_search_space() -> None:
 
 def test_study_optimize_with_exceeding_number_of_trials() -> None:
     def objective(trial: Trial) -> float:
-
         return trial.suggest_int("a", 0, 100)
 
     # When `n_trials` is `None`, the optimization stops just after all grids are evaluated.
-    search_space: Dict[str, List[GridValueType]] = {"a": [0, 50]}
+    search_space: dict[str, list[GridValueType]] = {"a": [0, 50]}
     study = optuna.create_study(sampler=samplers.GridSampler(search_space))
     study.optimize(objective, n_trials=None)
     assert len(study.trials) == 2
@@ -91,15 +87,46 @@ def test_study_optimize_with_exceeding_number_of_trials() -> None:
 
 def test_study_optimize_with_pruning() -> None:
     # Pruned trials should count towards grid consumption.
-    search_space: Dict[str, List[GridValueType]] = {"a": [0, 50]}
+    search_space: dict[str, list[GridValueType]] = {"a": [0, 50]}
     study = optuna.create_study(sampler=samplers.GridSampler(search_space))
     study.optimize(pruned_objective, n_trials=None)
     assert len(study.trials) == 2
 
 
+def test_study_optimize_with_fail() -> None:
+    def objective(trial: Trial) -> float:
+        return trial.suggest_int("a", 0, 100)
+
+    # Failed trials should count towards grid consumption.
+    search_space: dict[str, list[GridValueType]] = {"a": [0, 50]}
+    study = optuna.create_study(sampler=samplers.GridSampler(search_space))
+    study.optimize(fail_objective, n_trials=1, catch=ValueError)
+    study.optimize(objective, n_trials=None)
+    assert len(study.trials) == 2
+
+
+def test_study_optimize_with_numpy_related_search_space() -> None:
+    def objective(trial: Trial) -> float:
+        a = trial.suggest_float("a", 0, 10)
+        b = trial.suggest_float("b", -0.1, 0.1)
+
+        return a + b
+
+    # Test that all combinations of the grid is sampled.
+    search_space = {
+        "a": np.linspace(0, 10, 11),
+        "b": np.arange(-0.1, 0.1, 0.05),
+    }
+    with StorageSupplier("sqlite") as storage:
+        study = optuna.create_study(
+            sampler=samplers.GridSampler(search_space),  # type: ignore
+            storage=storage,
+        )
+        study.optimize(objective, n_trials=None)
+
+
 def test_study_optimize_with_multiple_search_spaces() -> None:
     def objective(trial: Trial) -> float:
-
         a = trial.suggest_int("a", 0, 100)
         b = trial.suggest_float("b", -100, 100)
 
@@ -142,7 +169,6 @@ def test_study_optimize_with_multiple_search_spaces() -> None:
 
 
 def test_cast_value() -> None:
-
     samplers.GridSampler._check_value("x", None)
     samplers.GridSampler._check_value("x", True)
     samplers.GridSampler._check_value("x", False)
@@ -157,8 +183,7 @@ def test_cast_value() -> None:
 
 
 def test_has_same_search_space() -> None:
-
-    search_space: Dict[str, List[Union[int, str]]] = {"x": [3, 2, 1], "y": ["a", "b", "c"]}
+    search_space: dict[str, list[int | str]] = {"x": [3, 2, 1], "y": ["a", "b", "c"]}
     sampler = samplers.GridSampler(search_space)
     assert sampler._same_search_space(search_space)
     assert sampler._same_search_space({"x": [3, 2, 1], "y": ["a", "b", "c"]})
@@ -225,8 +250,15 @@ def test_nan() -> None:
     sampler = optuna.samplers.GridSampler({"x": [0, float("nan")]})
     study = optuna.create_study(sampler=sampler)
     study.optimize(
-        lambda trial: 1
-        if np.isnan(cast(float, trial.suggest_categorical("x", [0, float("nan")])))
-        else 0
+        lambda trial: 1 if np.isnan(trial.suggest_categorical("x", [0, float("nan")])) else 0
     )
     assert len(study.get_trials()) == 2
+
+
+def test_is_exhausted() -> None:
+    search_space = {"a": [0, 50]}
+    sampler = samplers.GridSampler(search_space)
+    study = optuna.create_study(sampler=sampler)
+    assert not sampler.is_exhausted(study)
+    study.optimize(lambda trial: trial.suggest_categorical("a", [0, 50]))
+    assert sampler.is_exhausted(study)

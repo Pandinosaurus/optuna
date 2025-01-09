@@ -1,9 +1,8 @@
+from __future__ import annotations
+
+from collections.abc import Callable
 from io import BytesIO
 from typing import Any
-from typing import Callable
-from typing import List
-from typing import Optional
-from typing import Union
 
 import numpy as np
 import pytest
@@ -33,11 +32,12 @@ if plt_imports.is_successful():
 parametrized_plot_edf = pytest.mark.parametrize("plot_edf", [plotly_plot_edf, plt_plot_edf])
 
 
-def save_static_image(figure: Union[go.Figure, Axes, np.ndarray]) -> None:
+def save_static_image(figure: go.Figure | Axes | np.ndarray) -> None:
     if isinstance(figure, go.Figure):
         figure.write_image(BytesIO())
     else:
         plt.savefig(BytesIO())
+        plt.close()
 
 
 @parametrized_plot_edf
@@ -52,7 +52,6 @@ def _validate_edf_values(edf_values: np.ndarray) -> None:
 
 @parametrized_plot_edf
 def test_target_is_none_and_study_is_multi_obj(plot_edf: Callable[..., Any]) -> None:
-
     study = create_study(directions=["minimize", "minimize"])
     with pytest.raises(ValueError):
         plot_edf(study)
@@ -102,9 +101,7 @@ def test_plot_edf_with_target(plot_edf: Callable[..., Any]) -> None:
 
 @parametrized_plot_edf
 @pytest.mark.parametrize("target_name", [None, "Target Name"])
-def test_plot_edf_with_target_name(
-    plot_edf: Callable[..., Any], target_name: Optional[str]
-) -> None:
+def test_plot_edf_with_target_name(plot_edf: Callable[..., Any], target_name: str | None) -> None:
     study = create_study()
     study.optimize(lambda t: t.suggest_float("x", 0, 5), n_trials=10)
     if target_name is None:
@@ -150,7 +147,7 @@ def test_get_edf_info(n_studies: int, target: Callable[[optuna.trial.FrozenTrial
         study.optimize(lambda t: t.suggest_float("x", 0, max_target), n_trials=n_trials)
         studies.append(study)
 
-    info = _get_edf_info(studies, target=target)
+    info = _get_edf_info(studies, target=target, target_name="Target Name")
     assert info.x_values.shape == (NUM_SAMPLES_X_AXIS,)
     assert all([0 <= x <= max_target for x in info.x_values])
     assert len(info.lines) == n_studies
@@ -160,9 +157,8 @@ def test_get_edf_info(n_studies: int, target: Callable[[optuna.trial.FrozenTrial
         _validate_edf_values(line.y_values)
 
 
-@pytest.mark.parametrize("value", [float("inf"), -float("inf"), float("nan")])
+@pytest.mark.parametrize("value", [float("inf"), -float("inf")])
 def test_nonfinite_removed(value: float) -> None:
-
     study = prepare_study_with_trials(value_for_first_trial=value)
     edf_info = _get_edf_info(study)
     assert all(np.isfinite(edf_info.x_values))
@@ -171,15 +167,15 @@ def test_nonfinite_removed(value: float) -> None:
 @pytest.mark.parametrize("objective", (0, 1))
 @pytest.mark.parametrize("value", (float("inf"), -float("inf")))
 def test_nonfinite_multiobjective(objective: int, value: float) -> None:
-
     study = prepare_study_with_trials(n_objectives=2, value_for_first_trial=value)
-    edf_info = _get_edf_info(study, target=lambda t: t.values[objective])
+    edf_info = _get_edf_info(
+        study, target=lambda t: t.values[objective], target_name="Target Name"
+    )
     assert all(np.isfinite(edf_info.x_values))
 
 
 def test_inconsistent_number_of_trial_values() -> None:
-
-    studies: List[Study] = []
+    studies: list[Study] = []
     n_studies = 5
 
     for i in range(n_studies):

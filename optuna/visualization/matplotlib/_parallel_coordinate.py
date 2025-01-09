@@ -1,6 +1,6 @@
-from typing import Callable
-from typing import List
-from typing import Optional
+from __future__ import annotations
+
+from collections.abc import Callable
 
 import numpy as np
 
@@ -21,9 +21,9 @@ if _imports.is_successful():
 @experimental_func("2.2.0")
 def plot_parallel_coordinate(
     study: Study,
-    params: Optional[List[str]] = None,
+    params: list[str] | None = None,
     *,
-    target: Optional[Callable[[FrozenTrial], float]] = None,
+    target: Callable[[FrozenTrial], float] | None = None,
     target_name: str = "Objective Value",
 ) -> "Axes":
     """Plot the high-dimensional parameter relationships in a study with Matplotlib.
@@ -32,26 +32,6 @@ def plot_parallel_coordinate(
 
     .. seealso::
         Please refer to :func:`optuna.visualization.plot_parallel_coordinate` for an example.
-
-    Example:
-
-        The following code snippet shows how to plot the high-dimensional parameter relationships.
-
-        .. plot::
-
-            import optuna
-
-            def objective(trial):
-                x = trial.suggest_float("x", -100, 100)
-                y = trial.suggest_categorical("y", [-1, 0, 1])
-                return x ** 2 + y
-
-
-            sampler = optuna.samplers.TPESampler(seed=10)
-            study = optuna.create_study(sampler=sampler)
-            study.optimize(objective, n_trials=10)
-
-            optuna.visualization.matplotlib.plot_parallel_coordinate(study, params=["x", "y"])
 
     Args:
         study:
@@ -81,7 +61,6 @@ def plot_parallel_coordinate(
 
 
 def _get_parallel_coordinate_plot(info: _ParallelCoordinateInfo) -> "Axes":
-
     reversescale = info.reverse_scale
     target_name = info.target_name
 
@@ -122,7 +101,7 @@ def _get_parallel_coordinate_plot(info: _ParallelCoordinateInfo) -> "Axes":
     segments = [np.column_stack([x, y]) for x, y in zip(xs, dims_obj_base)]
     lc = LineCollection(segments, cmap=cmap)
     lc.set_array(np.asarray(info.dim_objective.values))
-    axcb = fig.colorbar(lc, pad=0.1)
+    axcb = fig.colorbar(lc, pad=0.1, ax=ax)
     axcb.set_label(target_name)
     var_names = [info.dim_objective.label] + [dim.label for dim in info.dims_params]
     plt.xticks(range(n_params + 1), var_names, rotation=330)

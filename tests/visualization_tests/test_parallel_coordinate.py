@@ -1,10 +1,9 @@
+from __future__ import annotations
+
+from collections.abc import Callable
 from io import BytesIO
 import math
 from typing import Any
-from typing import Callable
-from typing import Dict
-from typing import List
-from typing import Optional
 
 import numpy as np
 import pytest
@@ -34,7 +33,6 @@ parametrize_plot_parallel_coordinate = pytest.mark.parametrize(
 
 
 def _create_study_with_failed_trial() -> Study:
-
     study = create_study()
     study.optimize(fail_objective, n_trials=1, catch=(ValueError,))
 
@@ -43,7 +41,7 @@ def _create_study_with_failed_trial() -> Study:
 
 def _create_study_with_categorical_params() -> Study:
     study_categorical_params = create_study()
-    distributions: Dict[str, BaseDistribution] = {
+    distributions: dict[str, BaseDistribution] = {
         "category_a": CategoricalDistribution(("preferred", "opt")),
         "category_b": CategoricalDistribution(("net", "una")),
     }
@@ -66,7 +64,7 @@ def _create_study_with_categorical_params() -> Study:
 
 def _create_study_with_numeric_categorical_params() -> Study:
     study_categorical_params = create_study()
-    distributions: Dict[str, BaseDistribution] = {
+    distributions: dict[str, BaseDistribution] = {
         "category_a": CategoricalDistribution((1, 2)),
         "category_b": CategoricalDistribution((10, 20, 30)),
     }
@@ -96,7 +94,7 @@ def _create_study_with_numeric_categorical_params() -> Study:
 
 def _create_study_with_log_params() -> Study:
     study_log_params = create_study()
-    distributions: Dict[str, BaseDistribution] = {
+    distributions: dict[str, BaseDistribution] = {
         "param_a": FloatDistribution(1e-7, 1e-2, log=True),
         "param_b": FloatDistribution(1, 1000, log=True),
     }
@@ -126,7 +124,7 @@ def _create_study_with_log_params() -> Study:
 
 def _create_study_with_log_scale_and_str_and_numeric_category() -> Study:
     study_multi_distro_params = create_study()
-    distributions: Dict[str, BaseDistribution] = {
+    distributions: dict[str, BaseDistribution] = {
         "param_a": CategoricalDistribution(("preferred", "opt")),
         "param_b": CategoricalDistribution((1, 2, 10)),
         "param_c": FloatDistribution(1, 1000, log=True),
@@ -167,14 +165,12 @@ def _create_study_with_log_scale_and_str_and_numeric_category() -> Study:
 
 
 def test_target_is_none_and_study_is_multi_obj() -> None:
-
     study = create_study(directions=["minimize", "minimize"])
     with pytest.raises(ValueError):
         _get_parallel_coordinate_info(study)
 
 
 def test_plot_parallel_coordinate_customized_target_name() -> None:
-
     study = prepare_study_with_trials()
     figure = plotly_plot_parallel_coordinate(study, target_name="Target Name")
     assert figure.data[0]["dimensions"][0]["label"] == "Target Name"
@@ -201,19 +197,18 @@ def test_plot_parallel_coordinate_customized_target_name() -> None:
 def test_plot_parallel_coordinate(
     plot_parallel_coordinate: Callable[..., Any],
     specific_create_study: Callable[[], Study],
-    params: Optional[List[str]],
+    params: list[str] | None,
 ) -> None:
-
     study = specific_create_study()
     figure = plot_parallel_coordinate(study, params=params)
     if isinstance(figure, go.Figure):
         figure.write_image(BytesIO())
     else:
         plt.savefig(BytesIO())
+        plt.close()
 
 
 def test_get_parallel_coordinate_info() -> None:
-
     # Test with no trial.
     study = create_study()
     info = _get_parallel_coordinate_info(study)
@@ -528,7 +523,7 @@ def test_get_parallel_coordinate_info_unique_param() -> None:
     # Test case when one unique value is suggested during the optimization.
 
     study_categorical_params = create_study()
-    distributions: Dict[str, BaseDistribution] = {
+    distributions: dict[str, BaseDistribution] = {
         "category_a": CategoricalDistribution(("preferred", "opt")),
         "param_b": FloatDistribution(1, 1000, log=True),
     }
@@ -703,7 +698,9 @@ def test_color_map(direction: str) -> None:
         assert not line["reversescale"]
 
     # When `target` is not `None`, `reversescale` is always `True`.
-    line = plotly_plot_parallel_coordinate(study, target=lambda t: t.number).data[0]["line"]
+    line = plotly_plot_parallel_coordinate(
+        study, target=lambda t: t.number, target_name="Target Name"
+    ).data[0]["line"]
     assert COLOR_SCALE == [v[1] for v in line["colorscale"]]
     assert line["reversescale"]
 
@@ -720,7 +717,9 @@ def test_color_map(direction: str) -> None:
                 },
             )
         )
-    line = plotly_plot_parallel_coordinate(study, target=lambda t: t.number).data[0]["line"]
+    line = plotly_plot_parallel_coordinate(
+        study, target=lambda t: t.number, target_name="Target Name"
+    ).data[0]["line"]
     assert COLOR_SCALE == [v[1] for v in line["colorscale"]]
     assert line["reversescale"]
 
@@ -765,18 +764,18 @@ def test_get_parallel_coordinate_info_only_missing_params() -> None:
     )
 
 
-@pytest.mark.parametrize("value", [float("inf"), -float("inf"), float("nan")])
+@pytest.mark.parametrize("value", [float("inf"), -float("inf")])
 def test_nonfinite_removed(value: float) -> None:
-
     study = prepare_study_with_trials(value_for_first_trial=value)
     info = _get_parallel_coordinate_info(study)
     assert all(np.isfinite(info.dim_objective.values))
 
 
 @pytest.mark.parametrize("objective", (0, 1))
-@pytest.mark.parametrize("value", (float("inf"), -float("inf"), float("nan")))
+@pytest.mark.parametrize("value", (float("inf"), -float("inf")))
 def test_nonfinite_multiobjective(objective: int, value: float) -> None:
-
     study = prepare_study_with_trials(n_objectives=2, value_for_first_trial=value)
-    info = _get_parallel_coordinate_info(study, target=lambda t: t.values[objective])
+    info = _get_parallel_coordinate_info(
+        study, target=lambda t: t.values[objective], target_name="Target Name"
+    )
     assert all(np.isfinite(info.dim_objective.values))

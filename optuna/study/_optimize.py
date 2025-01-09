@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+from collections.abc import Iterable
+from collections.abc import Sequence
 from concurrent.futures import FIRST_COMPLETED
 from concurrent.futures import Future
 from concurrent.futures import ThreadPoolExecutor
@@ -8,14 +13,6 @@ import itertools
 import os
 import sys
 from typing import Any
-from typing import Callable
-from typing import List
-from typing import Optional
-from typing import Sequence
-from typing import Set
-from typing import Tuple
-from typing import Type
-from typing import Union
 import warnings
 
 import optuna
@@ -37,11 +34,11 @@ _logger = logging.get_logger(__name__)
 def _optimize(
     study: "optuna.Study",
     func: "optuna.study.study.ObjectiveFuncType",
-    n_trials: Optional[int] = None,
-    timeout: Optional[float] = None,
+    n_trials: int | None = None,
+    timeout: float | None = None,
     n_jobs: int = 1,
-    catch: Tuple[Type[Exception], ...] = (),
-    callbacks: Optional[List[Callable[["optuna.Study", FrozenTrial], None]]] = None,
+    catch: tuple[type[Exception], ...] = (),
+    callbacks: Iterable[Callable[["optuna.Study", FrozenTrial], None]] | None = None,
     gc_after_trial: bool = False,
     show_progress_bar: bool = False,
 ) -> None:
@@ -50,7 +47,7 @@ def _optimize(
             "The catch argument is of type '{}' but must be a tuple.".format(type(catch).__name__)
         )
 
-    if not study._optimize_lock.acquire(False):
+    if study._thread_local.in_optimize_loop:
         raise RuntimeError("Nested invocation of `Study.optimize` method isn't allowed.")
 
     if show_progress_bar and n_trials is None and timeout is not None and n_jobs != 1:
@@ -80,7 +77,7 @@ def _optimize(
                 n_jobs = os.cpu_count() or 1
 
             time_start = datetime.datetime.now()
-            futures: Set[Future] = set()
+            futures: set[Future] = set()
 
             with ThreadPoolExecutor(max_workers=n_jobs) as executor:
                 for n_submitted_trials in itertools.count():
@@ -118,22 +115,25 @@ def _optimize(
                         )
                     )
     finally:
-        study._optimize_lock.release()
+        study._thread_local.in_optimize_loop = False
         progress_bar.close()
 
 
 def _optimize_sequential(
     study: "optuna.Study",
     func: "optuna.study.study.ObjectiveFuncType",
-    n_trials: Optional[int],
-    timeout: Optional[float],
-    catch: Tuple[Type[Exception], ...],
-    callbacks: Optional[List[Callable[["optuna.Study", FrozenTrial], None]]],
+    n_trials: int | None,
+    timeout: float | None,
+    catch: tuple[type[Exception], ...],
+    callbacks: Iterable[Callable[["optuna.Study", FrozenTrial], None]] | None,
     gc_after_trial: bool,
     reseed_sampler_rng: bool,
-    time_start: Optional[datetime.datetime],
-    progress_bar: Optional[pbar_module._ProgressBar],
+    time_start: datetime.datetime | None,
+    progress_bar: pbar_module._ProgressBar | None,
 ) -> None:
+    # Here we set `in_optimize_loop = True`, not at the beginning of the `_optimize()` function.
+    # Because it is a thread-local object and `n_jobs` option spawns new threads.
+    study._thread_local.in_optimize_loop = True
     if reseed_sampler_rng:
         study.sampler.reseed_rng()
 
@@ -160,7 +160,7 @@ def _optimize_sequential(
             frozen_trial = _run_trial(study, func, catch)
         finally:
             # The following line mitigates memory problems that can be occurred in some
-            # environments (e.g., services that use computing containers such as CircleCI).
+            # environments (e.g., services that use computing containers such as GitHub Actions).
             # Please refer to the following PR for further details:
             # https://github.com/optuna/optuna/pull/325.
             if gc_after_trial:
@@ -171,7 +171,8 @@ def _optimize_sequential(
                 callback(study, frozen_trial)
 
         if progress_bar is not None:
-            progress_bar.update((datetime.datetime.now() - time_start).total_seconds())
+            elapsed_seconds = (datetime.datetime.now() - time_start).total_seconds()
+            progress_bar.update(elapsed_seconds, study)
 
     study._storage.remove_session()
 
@@ -179,17 +180,17 @@ def _optimize_sequential(
 def _run_trial(
     study: "optuna.Study",
     func: "optuna.study.study.ObjectiveFuncType",
-    catch: Tuple[Type[Exception], ...],
+    catch: tuple[type[Exception], ...],
 ) -> trial_module.FrozenTrial:
     if is_heartbeat_enabled(study._storage):
         optuna.storages.fail_stale_trials(study)
 
     trial = study.ask()
 
-    state: Optional[TrialState] = None
-    value_or_values: Optional[Union[float, Sequence[float]]] = None
-    func_err: Optional[Union[Exception, KeyboardInterrupt]] = None
-    func_err_fail_exc_info: Optional[Any] = None
+    state: TrialState | None = None
+    value_or_values: float | Sequence[float] | None = None
+    func_err: Exception | KeyboardInterrupt | None = None
+    func_err_fail_exc_info: Any | None = None
 
     with get_heartbeat_thread(trial._trial_id, study._storage):
         try:
@@ -206,7 +207,11 @@ def _run_trial(
     # `_tell_with_warning` may raise during trial post-processing.
     try:
         frozen_trial = _tell_with_warning(
-            study=study, trial=trial, values=value_or_values, state=state, suppress_warning=True
+            study=study,
+            trial=trial,
+            value_or_values=value_or_values,
+            state=state,
+            suppress_warning=True,
         )
     except Exception:
         frozen_trial = study._storage.get_trial(trial._trial_id)
@@ -246,7 +251,7 @@ def _run_trial(
 
 def _log_failed_trial(
     trial: FrozenTrial,
-    message: Union[str, Warning],
+    message: str | Warning,
     exc_info: Any = None,
     value_or_values: Any = None,
 ) -> None:

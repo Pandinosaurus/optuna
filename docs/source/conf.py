@@ -16,12 +16,13 @@
 # import sys
 # sys.path.insert(0, os.path.abspath('.'))
 
-import pkg_resources
+import warnings
 
 import plotly.io as pio
-from sphinx_gallery.sorting import FileNameSortKey
+from sklearn.exceptions import ConvergenceWarning
 
-__version__ = pkg_resources.get_distribution("optuna").version
+import optuna
+
 
 # -- Project information -----------------------------------------------------
 
@@ -30,11 +31,13 @@ copyright = "2018, Optuna Contributors"
 author = "Optuna Contributors."
 
 # The short X.Y version
-version = __version__
+version = optuna.version.__version__
 # The full version, including alpha/beta/rc tags
-release = __version__
+release = optuna.version.__version__
 
 # -- General configuration ---------------------------------------------------
+
+pio.renderers.default = "sphinx_gallery"
 
 # If your documentation needs a minimal Sphinx version, state it here.
 #
@@ -44,6 +47,7 @@ release = __version__
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
+    "notfound.extension",
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
     "sphinx.ext.doctest",
@@ -53,11 +57,8 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx.ext.githubpages",
-    "cliff.sphinxext",
     "sphinx_copybutton",
-    "sphinx_gallery.gen_gallery",
-    "matplotlib.sphinxext.plot_directive",
-    "sphinx_plotly_directive",
+    "sphinx_gallery.gen_gallery"
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -75,7 +76,10 @@ master_doc = "index"
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path .
-exclude_patterns = []
+exclude_patterns = [
+    "reference/visualization/generated/index.rst",
+    "reference/visualization/matplotlib/generated/index.rst",
+]
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = "sphinx"
@@ -102,9 +106,6 @@ html_logo = "../image/optuna-logo.png"
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
 html_css_files = ["css/custom.css"]
-
-# Remove "Edit on GitHub."
-html_show_sourcelink = False
 
 # Custom sidebar templates, must be a dictionary that maps document names
 # to template names.
@@ -168,14 +169,25 @@ texinfo_documents = [
     ),
 ]
 
-intersphinx_mapping = {"python": ("https://docs.python.org/3", None)}
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3", None),
+    "distributed": ("https://distributed.dask.org/en/stable", None),
+    "lightgbm": ("https://lightgbm.readthedocs.io/en/stable", None),
+    "matplotlib": ("https://matplotlib.org/stable", None),
+    "numpy": ("https://numpy.org/doc/stable", None),
+    "scipy": ("https://docs.scipy.org/doc/scipy", None),
+    "sklearn": ("https://scikit-learn.org/stable", None),
+    "torch": ("https://pytorch.org/docs/stable", None),
+    "pandas": ("https://pandas.pydata.org/docs", None),
+    "plotly": ("https://plotly.com/python-api-reference", None),
+}
 
 # -- Extension configuration -------------------------------------------------
 autosummary_generate = True
 autodoc_typehints = "description"
 autodoc_default_options = {
     "members": True,
-    "inherited-members": True,
+    "inherited-members": "int",
     "exclude-members": "with_traceback",
 }
 
@@ -183,18 +195,28 @@ autodoc_default_options = {
 copybutton_prompt_text = "$ "
 
 # Sphinx Gallery
-pio.renderers.default = "sphinx_gallery"
+pio.renderers.default = "sphinx_gallery_png"
 
 sphinx_gallery_conf = {
+    "doc_module": ("sphinx_gallery"),
     "examples_dirs": [
-        "../../tutorial",
+        "../../tutorial/10_key_features",
+        "../../tutorial/20_recipes",
+        "../visualization_examples",
+        "../visualization_matplotlib_examples",
     ],
     "gallery_dirs": [
-        "tutorial",
+        "tutorial/10_key_features",
+        "tutorial/20_recipes",
+        "reference/visualization/generated",
+        "reference/visualization/matplotlib/generated",
     ],
-    "within_subsection_order": FileNameSortKey,
+    "compress_images": ("images", "thumbnails"),
+    "thumbnail_size": (400, 280),
+    "within_subsection_order": "FileNameSortKey",
     "filename_pattern": r"/*\.py",
     "first_notebook_cell": None,
+    "image_scrapers": ("matplotlib", "plotly.io._sg_scraper.plotly_sg_scraper"),
 }
 
 # matplotlib plot directive
@@ -208,3 +230,7 @@ plotly_include_source = True
 plotly_formats = ["html"]
 plotly_html_show_formats = False
 plotly_html_show_source_link = False
+
+# Not showing common warning messages as in
+# https://sphinx-gallery.github.io/stable/configuration.html#removing-warnings.
+warnings.filterwarnings("ignore", category=ConvergenceWarning, module="sklearn")

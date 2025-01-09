@@ -9,14 +9,14 @@ def prepare_study_with_trials(
     direction: str = "minimize",
     value_for_first_trial: float = 0.0,
 ) -> Study:
-
     """Return a dummy study object for tests.
 
     This function is added to reduce the code to set up dummy study object in each test case.
     However, you can only use this function for unit tests that are loosely coupled with the
     dummy study object. Unit tests that are tightly coupled with the study become difficult to
-    read because of `Mystery Guest <http://xunitpatterns.com/Obscure%20Test.html#Mystery%20Guest>`_
-    and/or `Eager Test <http://xunitpatterns.com/Obscure%20Test.html#Eager%20Test>`_ anti-patterns.
+    read because of
+    `Mystery Guest <http://xunitpatterns.com/Obscure%20Test.html#Mystery%20Guest>`__ and/or
+    `Eager Test <http://xunitpatterns.com/Obscure%20Test.html#Eager%20Test>`__ anti-patterns.
 
     Args:
         n_objectives: Number of objective values.

@@ -1,16 +1,15 @@
+from __future__ import annotations
+
 import copy
 import datetime
 from typing import Any
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Tuple
 
 import pytest
 
 from optuna import create_study
 from optuna.distributions import BaseDistribution
 from optuna.distributions import FloatDistribution
+from optuna.distributions import IntDistribution
 from optuna.testing.storages import STORAGE_MODES
 from optuna.testing.storages import StorageSupplier
 import optuna.trial
@@ -23,8 +22,8 @@ from optuna.trial import TrialState
 def _create_trial(
     *,
     value: float = 0.2,
-    params: Dict[str, Any] = {"x": 10},
-    distributions: Dict[str, BaseDistribution] = {"x": FloatDistribution(5, 12)},
+    params: dict[str, Any] = {"x": 10},
+    distributions: dict[str, BaseDistribution] = {"x": FloatDistribution(5, 12)},
 ) -> FrozenTrial:
     trial = optuna.trial.create_trial(value=value, params=params, distributions=distributions)
     trial.number = 0
@@ -32,7 +31,6 @@ def _create_trial(
 
 
 def test_eq_ne() -> None:
-
     trial = _create_trial()
 
     trial_other = copy.copy(trial)
@@ -43,7 +41,6 @@ def test_eq_ne() -> None:
 
 
 def test_lt() -> None:
-
     trial = _create_trial()
 
     trial_other = copy.copy(trial)
@@ -70,7 +67,6 @@ def test_lt() -> None:
 
 
 def test_repr() -> None:
-
     trial = _create_trial()
 
     assert trial == eval(repr(trial))
@@ -79,15 +75,13 @@ def test_repr() -> None:
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_sampling(storage_mode: str) -> None:
     def objective(trial: BaseTrial) -> float:
-
-        a = trial.suggest_uniform("a", 0.0, 10.0)
-        b = trial.suggest_loguniform("b", 0.1, 10.0)
-        c = trial.suggest_discrete_uniform("c", 0.0, 10.0, 1.0)
+        a = trial.suggest_float("a", 0.0, 10.0)
+        b = trial.suggest_float("b", 0.1, 10.0, log=True)
+        c = trial.suggest_float("c", 0.0, 10.0, step=1.0)
         d = trial.suggest_int("d", 0, 10)
         e = trial.suggest_categorical("e", [0, 1, 2])
         f = trial.suggest_int("f", 1, 10, log=True)
 
-        assert isinstance(e, int)
         return a + b + c + d + e + f
 
     with StorageSupplier(storage_mode) as storage:
@@ -103,14 +97,12 @@ def test_sampling(storage_mode: str) -> None:
 
 
 def test_set_value() -> None:
-
     trial = _create_trial()
     trial.value = 0.1
     assert trial.value == 0.1
 
 
 def test_set_values() -> None:
-
     trial = _create_trial()
     trial.values = (0.1, 0.2)
     assert trial.values == [0.1, 0.2]  # type: ignore[comparison-overlap]
@@ -121,7 +113,6 @@ def test_set_values() -> None:
 
 
 def test_validate() -> None:
-
     # Valid.
     valid_trial = _create_trial()
     valid_trial._validate()
@@ -153,14 +144,33 @@ def test_validate() -> None:
         with pytest.raises(ValueError):
             invalid_trial._validate()
 
+    # Invalid: `state` is `FAIL`, and `value` is set.
+    invalid_trial = copy.copy(valid_trial)
+    invalid_trial.state = TrialState.FAIL
+    invalid_trial.value = 1.0
+    with pytest.raises(ValueError):
+        invalid_trial._validate()
+
     # Invalid: `state` is `COMPLETE` and `value` is not set.
     invalid_trial = copy.copy(valid_trial)
     invalid_trial.value = None
     with pytest.raises(ValueError):
         invalid_trial._validate()
 
+    # Invalid: `state` is `COMPLETE` and `value` is NaN.
+    invalid_trial = copy.copy(valid_trial)
+    invalid_trial.value = float("nan")
+    with pytest.raises(ValueError):
+        invalid_trial._validate()
+
+    # Invalid: `state` is `COMPLETE` and `values` includes NaN.
+    invalid_trial = copy.copy(valid_trial)
+    invalid_trial.values = [0.0, float("nan")]
+    with pytest.raises(ValueError):
+        invalid_trial._validate()
+
     # Invalid: Inconsistent `params` and `distributions`
-    inconsistent_pairs: List[Tuple[Dict[str, Any], Dict[str, BaseDistribution]]] = [
+    inconsistent_pairs: list[tuple[dict[str, Any], dict[str, BaseDistribution]]] = [
         # `params` has an extra element.
         ({"x": 0.1, "y": 0.5}, {"x": FloatDistribution(0, 1)}),
         # `distributions` has an extra element.
@@ -178,7 +188,6 @@ def test_validate() -> None:
 
 
 def test_number() -> None:
-
     trial = _create_trial()
     assert trial.number == 0
 
@@ -187,7 +196,6 @@ def test_number() -> None:
 
 
 def test_params() -> None:
-
     params = {"x": 1}
     trial = _create_trial(
         value=0.2,
@@ -195,17 +203,16 @@ def test_params() -> None:
         distributions={"x": FloatDistribution(0, 10)},
     )
 
-    assert trial.suggest_uniform("x", 0, 10) == 1
+    assert trial.suggest_float("x", 0, 10) == 1
     assert trial.params == params
 
     params = {"x": 2}
     trial.params = params
-    assert trial.suggest_uniform("x", 0, 10) == 2
+    assert trial.suggest_float("x", 0, 10) == 2
     assert trial.params == params
 
 
 def test_distributions() -> None:
-
     distributions = {"x": FloatDistribution(0, 10)}
     trial = _create_trial(
         value=0.2,
@@ -220,7 +227,6 @@ def test_distributions() -> None:
 
 
 def test_user_attrs() -> None:
-
     trial = _create_trial()
     assert trial.user_attrs == {}
 
@@ -230,7 +236,6 @@ def test_user_attrs() -> None:
 
 
 def test_system_attrs() -> None:
-
     trial = _create_trial()
     assert trial.system_attrs == {}
 
@@ -240,11 +245,10 @@ def test_system_attrs() -> None:
 
 
 def test_called_single_methods_when_multi() -> None:
-
     state = TrialState.COMPLETE
     values = (0.2, 0.3)
     params = {"x": 10}
-    distributions: Dict[str, BaseDistribution] = {"x": FloatDistribution(5, 12)}
+    distributions: dict[str, BaseDistribution] = {"x": FloatDistribution(5, 12)}
     user_attrs = {"foo": "bar"}
     system_attrs = {"baz": "qux"}
     intermediate_values = {0: 0.0, 1: 0.1, 2: 0.1}
@@ -270,8 +274,7 @@ def test_called_single_methods_when_multi() -> None:
 
 
 def test_init() -> None:
-    def _create_trial(value: Optional[float], values: Optional[List[float]]) -> FrozenTrial:
-
+    def _create_trial(value: float | None, values: list[float] | None) -> FrozenTrial:
         return FrozenTrial(
             number=0,
             trial_id=0,
@@ -302,16 +305,19 @@ def test_init() -> None:
 # experimental.
 @pytest.mark.parametrize("state", [TrialState.COMPLETE, TrialState.FAIL])
 def test_create_trial(state: TrialState) -> None:
-    value = 0.2
+    value: float | None = 0.2
     params = {"x": 10}
-    distributions: Dict[str, BaseDistribution] = {"x": FloatDistribution(5, 12)}
+    distributions: dict[str, BaseDistribution] = {"x": FloatDistribution(5, 12)}
     user_attrs = {"foo": "bar"}
     system_attrs = {"baz": "qux"}
     intermediate_values = {0: 0.0, 1: 0.1, 2: 0.1}
 
+    if state == TrialState.FAIL:
+        value = None
+
     trial = create_trial(
         state=state,
-        value=value,
+        value=value if state == TrialState.COMPLETE else None,
         params=params,
         distributions=distributions,
         user_attrs=user_attrs,
@@ -331,10 +337,19 @@ def test_create_trial(state: TrialState) -> None:
     assert (trial.datetime_complete is not None) == state.is_finished()
 
     with pytest.raises(ValueError):
-        create_trial(state=state, value=value, values=(value,))
+        create_trial(
+            state=state,
+            value=0.2 if state != TrialState.COMPLETE else None,
+            params=params,
+            distributions=distributions,
+            user_attrs=user_attrs,
+            system_attrs=system_attrs,
+            intermediate_values=intermediate_values,
+        )
 
 
 # Deprecated distributions are internally converted to corresponding distributions.
+@pytest.mark.filterwarnings("ignore::FutureWarning")
 def test_create_trial_distribution_conversion() -> None:
     fixed_params = {
         "ud": 0,
@@ -358,7 +373,6 @@ def test_create_trial_distribution_conversion() -> None:
         FutureWarning,
         match="See https://github.com/optuna/optuna/issues/2941",
     ) as record:
-
         trial = create_trial(params=fixed_params, distributions=fixed_distributions, value=1)
         assert len(record) == 6
 
@@ -400,3 +414,27 @@ def test_create_trial_distribution_conversion_noop() -> None:
 
     # Check fixed_distributions doesn't change.
     assert trial.distributions == fixed_distributions
+
+
+@pytest.mark.filterwarnings("ignore::FutureWarning")
+@pytest.mark.parametrize("positional_args_names", [[], ["step"], ["step", "log"]])
+def test_suggest_int_positional_args(positional_args_names: list[str]) -> None:
+    # If log is specified as positional, step must also be provided as positional.
+    trial = FrozenTrial(
+        number=0,
+        trial_id=0,
+        state=TrialState.COMPLETE,
+        value=0.0,
+        values=None,
+        datetime_start=datetime.datetime.now(),
+        datetime_complete=datetime.datetime.now(),
+        params={"x": 1},
+        distributions={"x": IntDistribution(-1, 1)},
+        user_attrs={},
+        system_attrs={},
+        intermediate_values={},
+    )
+    kwargs = dict(step=1, log=False)
+    args = [kwargs[name] for name in positional_args_names]
+    # No error should not be raised even if the coding style is old.
+    trial.suggest_int("x", -1, 1, *args)
